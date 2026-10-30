@@ -45,7 +45,11 @@ def add_entry(client, **fields) -> int:
     files = fields.pop("files", None)
     resp = client.post("/entries/new", data=fields, files=files)
     assert resp.status_code == 200
-    return int(str(resp.url).split("/entries/")[1].split("?")[0])
+    from app.db import engine
+    from app.models import Entry
+    from sqlmodel import Session, func, select
+    with Session(engine) as s:  # 保存后跳回首页，新条目就是 id 最大的那条
+        return s.exec(select(func.max(Entry.id))).one()
 
 
 @pytest.fixture

@@ -12,6 +12,15 @@ def test_all_pages_render(client, make_entry):
         assert client.get(url).status_code == 200, url
 
 
+def test_saving_returns_to_home(client, make_entry):
+    resp = client.post("/entries/new", data={"kind": "award", "title": "国家奖学金"})
+    assert resp.url.path == "/" and "已保存「国家奖学金」" in resp.text
+
+    entry_id = make_entry(kind="award", title="旧名字")
+    resp = client.post(f"/entries/{entry_id}/edit", data={"kind": "award", "title": "新名字"})
+    assert resp.url.path == "/" and "已保存「新名字」" in resp.text
+
+
 def test_skill_names_are_merged_case_insensitively(client, make_entry):
     make_entry(kind="project", title="A", skills="Python、SQL")
     make_entry(kind="project", title="B", skills="python, 机器学习")

@@ -134,7 +134,7 @@ async def create(request: Request, session: Session = Depends(get_session)):
     session.flush()
     file_msg = await save_form_files(session, form, entry)
     session.commit()
-    return redirect(f"/entries/{entry.id}", "已保存" + (f"，{file_msg}" if file_msg else ""))
+    return redirect("/", f"已保存「{entry.title}」" + (f"，{file_msg}" if file_msg else ""))
 
 
 @router.get("/entries/{entry_id}")
@@ -172,8 +172,8 @@ async def update(request: Request, entry_id: int, session: Session = Depends(get
     file_msg = await save_form_files(session, form, entry)
     session.commit()
     vault.prune_empty_dirs()
-    parts = ["已保存"] + ([f"{moved} 个文件已按新信息重新整理"] if moved else []) + ([file_msg] if file_msg else [])
-    return redirect(f"/entries/{entry.id}", "，".join(parts))
+    parts = [f"已保存「{entry.title}」"] + ([f"{moved} 个文件已按新信息重新整理"] if moved else []) + ([file_msg] if file_msg else [])
+    return redirect("/", "，".join(parts))
 
 
 @router.post("/entries/{entry_id}/delete")
