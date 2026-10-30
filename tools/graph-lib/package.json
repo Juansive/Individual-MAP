@@ -1,0 +1,15 @@
+{
+  "name": "individual-map-graph-lib",
+  "private": true,
+  "description": "把 3D 星图用到的库打包成 app/static/vendor/graph-lib.js。只有升级库时才需要运行：npm install && npm run build",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --minify --format=iife --legal-comments=none --outfile=../../app/static/vendor/graph-lib.js"
+  },
+  "dependencies": {
+    "3d-force-graph": "1.80.1",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

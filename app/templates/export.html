@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}导出与备份{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>导出与备份</h1>
+  <p class="muted">当前共 {{ entry_count }} 个条目、{{ file_count }} 个证明文件。全部数据都在项目的 <code>data/</code> 目录里。</p>
+</div>
+
+<div class="export-grid">
+  <section class="card">
+    <h2>导出 Markdown</h2>
+    <p class="muted">按类型整理成一份文档，可以直接贴给 AI 帮你写简历，或者自己对照着写。</p>
+    <a class="btn primary" href="/export/markdown">下载 .md 文件</a>
+  </section>
+
+  <section class="card">
+    <h2>完整备份</h2>
+    <p class="muted">数据库 + 所有证明文件打包成 zip，同时在 <code>data/backups</code> 保留一份。建议定期备份到网盘或 U 盘。</p>
+    <a class="btn primary" href="/export/backup">生成并下载备份</a>
+    <p class="muted small" style="margin-top: 12px">
+      另外，每次启动程序时（只要数据有变化）会自动给数据库做一份快照，保留最近 {{ keep_auto }} 份，在 <code>data/backups/auto</code>。
+      {% if latest_snapshot %}目前 {{ snapshot_count }} 份，最近一次：{{ latest_snapshot.strftime('%Y-%m-%d %H:%M') }}。{% endif %}
+    </p>
+    {% if backups %}
+      <ul class="backup-list">
+        {% for b in backups %}<li>{{ b.name }} <span class="muted">{{ filesize(b.stat().st_size) }}</span></li>{% endfor %}
+      </ul>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>归档文件夹</h2>
+    <p class="muted">证明文件按「年份 / 类型」整理在 <code>data/vault</code>，脱离本软件也能直接浏览。</p>
+    <div class="form-actions">
+      <form method="post" action="/vault/open"><button class="btn">打开文件夹</button></form>
+      <form method="post" action="/vault/organize"><button class="btn">整理全部文件</button></form>
+    </div>
+    <p class="muted small">修改条目的标题、时间或类型后，文件会自动跟着移动。「整理全部文件」用来把以前存的文件统一按现在的规则整理一遍。</p>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "_macros.html" import entry_card, kind_chip, issue_badges %}
+{% block content %}
+
+<section class="card quick-add">
+  <h2>快速记录</h2>
+  <form method="post" action="/entries/quick" enctype="multipart/form-data">
+    <div class="quick-row">
+      <select name="kind" aria-label="类型">
+        {% for key, k in ENTRY_KINDS.items() %}<option value="{{ key }}">{{ k.label }}</option>{% endfor %}
+      </select>
+      <input name="title" required placeholder="标题，例如：全国大学生数学建模竞赛 省一等奖">
+      <input type="month" name="start" aria-label="时间" title="时间（可不填）">
+    </div>
+    <textarea name="note" rows="2" placeholder="随手写几句：做了什么、结果怎样（可以不填，之后再补）"></textarea>
+    <label class="dropzone">
+      <input type="file" name="files" multiple>
+      <span class="dz-text">拖入证书、截图、PDF，或点击选择（可不选）</span>
+    </label>
+    <div class="form-actions">
+      <button class="btn primary">保存</button>
+      <span class="hint">只填标题也能保存，详情之后再补</span>
+    </div>
+  </form>
+</section>
+
+<section class="toolbar">
+  <form method="get" class="filters">
+    <input type="search" name="q" value="{{ q }}" placeholder="搜索标题、机构、描述、技能、文件名…">
+    <select name="kind" aria-label="类型">
+      <option value="">全部类型</option>
+      {% for key, k in ENTRY_KINDS.items() %}<option value="{{ key }}" {{ 'selected' if key == kind }}>{{ k.label }}</option>{% endfor %}
+    </select>
+    <select name="year" aria-label="年份">
+      <option value="">全部年份</option>
+      {% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}
+    </select>
+    <select name="skill" aria-label="技能">
+      <option value="">全部技能</option>
+      {% for s in skills %}<option {{ 'selected' if s.name == skill }}>{{ s.name }}</option>{% endfor %}
+    </select>
+    <label class="check"><input type="checkbox" name="todo" value="1" {{ 'checked' if todo }}> 只看待完善</label>
+    <input type="hidden" name="view" value="{{ view }}">
+    <button class="btn">筛选</button>
+    {% if filtering %}<a class="btn ghost" href="/?view={{ view }}">清除</a>{% endif %}
+  </form>
+  <div class="view-toggle" role="tablist">
+    <a href="{{ request.url.include_query_params(view='timeline') }}" class="{{ 'active' if view == 'timeline' }}">时间轴</a>
+    <a href="{{ request.url.include_query_params(view='list') }}" class="{{ 'active' if view == 'list' }}">列表</a>
+  </div>
+</section>
+
+<p class="summary">
+  共 {{ total }} 条{% if filtering %}，筛选出 {{ entries | length }} 条{% endif %}
+  {% if todo_count and not todo %} · <a href="/?todo=1&view={{ view }}">{{ todo_count }} 条待完善</a>{% endif %}
+</p>
+
+{% if not entries %}
+  <div class="empty">
+    {% if total %}没有符合条件的条目。{% else %}
+      <p class="empty-title">素材库还是空的</p>
+      <p>从上面的「快速记录」开始，想到一条记一条。<br>手边有一堆散落的证书？先全部丢进 <a href="/inbox">待归类</a>，之后再慢慢整理。</p>
+    {% endif %}
+  </div>
+{% elif view == 'list' %}
+  <div class="table-wrap">
+    <table class="entry-table">
+      <thead><tr><th>类型</th><th>标题</th><th>机构 / 角色</th><th>时间</th><th>技能</th><th>文件</th><th>待完善</th></tr></thead>
+      <tbody>
+      {% for e in entries %}
+        <tr onclick="location.href='/entries/{{ e.id }}'">
+          <td>{{ kind_chip(e.kind) }}</td>
+          <td><a href="/entries/{{ e.id }}">{{ e.title }}</a></td>
+          <td class="muted">{{ [e.org, e.role] | select | join(' · ') }}</td>
+          <td class="nowrap muted">{{ e.period_text() }}</td>
+          <td>{% for s in e.skills %}<span class="chip">{{ s.name }}</span>{% endfor %}</td>
+          <td class="muted">{{ e.attachments | length or '' }}</td>
+          <td>{{ issue_badges(check_entry(e)) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="timeline">
+    {% for year_label, items in groups %}
+      <section class="year-group">
+        <h3 class="year">{{ year_label }}<span>{{ items | length }} 条</span></h3>
+        <div class="year-items">
+          {% for e in items %}{{ entry_card(e) }}{% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% macro kind_chip(key) -%}
+  {% set k = kind_of(key) %}
+  <span class="kind-chip" style="--kind: {{ k.color }}">{{ k.label }}</span>
+{%- endmacro %}
+
+{% macro issue_badges(issues) -%}
+  {% for issue in issues %}<span class="issue">{{ issue }}</span>{% endfor %}
+{%- endmacro %}
+
+{% macro entry_card(e) -%}
+  {% set issues = check_entry(e) %}
+  <a class="entry-card" href="/entries/{{ e.id }}" style="--kind: {{ kind_of(e.kind).color }}">
+    <div class="entry-card-head">
+      {{ kind_chip(e.kind) }}
+      <span class="period">{{ e.period_text() }}</span>
+    </div>
+    <div class="entry-title">{{ e.title }}</div>
+    {% if e.org or e.role or e.level %}
+      <div class="entry-meta">{{ [e.org, e.role, e.level] | select | join(' · ') }}</div>
+    {% endif %}
+    {% if e.skills %}
+      <div class="chips">{% for s in e.skills %}<span class="chip">{{ s.name }}</span>{% endfor %}</div>
+    {% endif %}
+    <div class="entry-foot">
+      {% if e.attachments %}<span class="file-count">📎 {{ e.attachments | length }}</span>{% endif %}
+      {{ issue_badges(issues) }}
+    </div>
+  </a>
+{%- endmacro %}
+
+{% macro file_tile(att, next_url, actions=true) -%}
+  <div class="file-tile">
+    <a class="file-preview" href="/files/{{ att.id }}" target="_blank" rel="noopener">
+      {% if att.is_image %}
+        <img src="/files/{{ att.id }}" alt="{{ att.original_name }}" loading="lazy">
+      {% else %}
+        <span class="file-ext {{ 'pdf' if att.is_pdf }}">{{ att.ext }}</span>
+      {% endif %}
+    </a>
+    <div class="file-name" title="{{ att.original_name }}">{{ att.original_name }}</div>
+    <div class="file-sub">{{ filesize(att.size) }} · {{ att.created_at.strftime('%Y-%m-%d') }}</div>
+    {% if actions %}
+    <div class="file-actions">
+      <form method="post" action="/files/{{ att.id }}/reveal"><input type="hidden" name="next" value="{{ next_url }}"><button class="link-btn">在文件夹中显示</button></form>
+      <form method="post" action="/files/{{ att.id }}/delete" data-confirm="把「{{ att.original_name }}」移到回收目录 data/trash？"><input type="hidden" name="next" value="{{ next_url }}"><button class="link-btn danger">移除</button></form>
+    </div>
+    {% endif %}
+    {{ caller() if caller }}
+  </div>
+{%- endmacro %}

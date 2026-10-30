@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% from "_macros.html" import kind_chip, issue_badges, file_tile %}
+{% block title %}{{ entry.title }}{% endblock %}
+{% block content %}
+{% set here = '/entries/%d' % entry.id %}
+<div class="page-head">
+  <a class="back" href="/">← 素材库</a>
+  <div class="title-row">
+    <div>
+      <div class="detail-kind">{{ kind_chip(entry.kind) }} <span class="period">{{ entry.period_text() }}</span></div>
+      <h1>{{ entry.title }}</h1>
+      {% if entry.org or entry.role or entry.level %}
+        <p class="entry-meta big">{{ [entry.org, entry.role, entry.level] | select | join(' · ') }}</p>
+      {% endif %}
+    </div>
+    <div class="head-actions">
+      <a class="btn primary" href="{{ here }}/edit">编辑</a>
+      <form method="post" action="{{ here }}/delete" data-confirm="删除「{{ entry.title }}」？它的证明文件会放回待归类，不会被删除。">
+        <button class="btn ghost danger">删除</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if issues %}
+  <div class="notice">待完善：{{ issue_badges(issues) }} <a href="{{ here }}/edit">去补全 →</a></div>
+{% endif %}
+
+<div class="detail-grid">
+  <section class="card">
+    <h2>描述</h2>
+    {% if entry.description %}<p class="prose">{{ entry.description }}</p>{% else %}<p class="muted">还没写描述。</p>{% endif %}
+
+    <h2>成果要点</h2>
+    {% if entry.highlight_lines() %}
+      <ul class="highlights">{% for h in entry.highlight_lines() %}<li>{{ h }}</li>{% endfor %}</ul>
+    {% else %}<p class="muted">还没写成果要点。</p>{% endif %}
+
+    <h2>技能</h2>
+    {% if entry.skills %}
+      <div class="chips">{% for s in entry.skills %}<a class="chip" href="/?skill={{ s.name | urlencode }}">{{ s.name }}</a>{% endfor %}</div>
+    {% else %}<p class="muted">还没有技能标签。</p>{% endif %}
+
+    <h2>关联经历</h2>
+    {% if links %}
+      <ul class="link-list">
+        {% for link in links %}
+          <li>
+            <span class="rel">{{ link.label }}</span>
+            {{ kind_chip(link.entry.kind) }}
+            <a href="/entries/{{ link.entry.id }}">{{ link.entry.title }}</a>
+            <span class="muted small">{{ link.entry.period_text() }}</span>
+            <form method="post" action="/links/{{ link.id }}/delete" class="inline-form">
+              <input type="hidden" name="next" value="{{ here }}">
+              <button class="link-btn danger" title="取消关联">✕</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}<p class="muted">比如：这个奖来自哪个项目、这个社团是在哪段学习期间参加的。</p>{% endif %}
+    {% if other_entries %}
+      <form class="link-form" method="post" action="{{ here }}/links">
+        <select name="relation" aria-label="关系">
+          {% for value, label in link_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <select name="target_id" required aria-label="关联到哪条经历">
+          <option value="">选择经历…</option>
+          {% for e in other_entries %}<option value="{{ e.id }}">{{ e.title }}（{{ e.period_text() }}）</option>{% endfor %}
+        </select>
+        <button class="btn">添加关联</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>证明文件 <span class="muted small">{{ entry.attachments | length }}</span></h2>
+    {% if entry.attachments %}
+      <div class="file-grid">
+        {% for att in entry.attachments %}
+          {% call file_tile(att, here) %}
+            <form method="post" action="/files/{{ att.id }}/assign"><input type="hidden" name="next" value="{{ here }}"><input type="hidden" name="entry_id" value=""><button class="link-btn">放回待归类</button></form>
+          {% endcall %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ here }}/files" enctype="multipart/form-data">
+      <label class="dropzone" data-autosubmit>
+        <input type="file" name="files" multiple>
+        <span class="dz-text">拖入文件或点击上传，自动保存</span>
+      </label>
+    </form>
+
+    {% if inbox_files %}
+      <form class="attach-inbox" method="post" action="" data-dynamic-action>
+        <input type="hidden" name="next" value="{{ here }}">
+        <input type="hidden" name="entry_id" value="{{ entry.id }}">
+        <select data-action-select aria-label="从待归类选择文件">
+          <option value="">从待归类中选择文件…</option>
+          {% for att in inbox_files %}<option value="/files/{{ att.id }}/assign">{{ att.original_name }}</option>{% endfor %}
+        </select>
+        <button class="btn">归到这里</button>
+      </form>
+    {% endif %}
+  </section>
+</div>
+
+<p class="muted small">创建于 {{ entry.created_at.strftime('%Y-%m-%d %H:%M') }} · 更新于 {{ entry.updated_at.strftime('%Y-%m-%d %H:%M') }}</p>
+{% endblock %}

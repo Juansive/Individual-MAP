@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+# 打包好的第三方库：不参与代码统计和差异对比
+app/static/vendor/** linguist-vendored -diff
+tools/graph-lib/package-lock.json -diff

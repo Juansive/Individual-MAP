@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}技能{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>技能</h1>
+  <p class="muted">技能是把不同经历连起来的“突触”。在这里统一名字、设置类别（星图里会按类别着色），把重复的技能合并成一个。</p>
+</div>
+
+{% if not skills %}
+  <div class="empty">还没有技能。在编辑经历时填写“技能标签”，这里就会出现。</div>
+{% else %}
+  <div class="table-wrap">
+    <table class="entry-table skill-table">
+      <thead><tr><th>名称与类别</th><th>经历数</th><th>合并到</th><th></th></tr></thead>
+      <tbody>
+      {% for s in skills %}
+        <tr>
+          <td>
+            <form method="post" action="/skills/{{ s.id }}/update" class="skill-row-form">
+              <span class="cat-dot" style="--c: {{ categories.get(s.category, categories['']).color }}"></span>
+              <input name="name" value="{{ s.name }}" required aria-label="技能名">
+              <select name="category" aria-label="类别">
+                {% for key, cat in categories.items() %}<option value="{{ key }}" {{ 'selected' if key == s.category }}>{{ cat.label }}</option>{% endfor %}
+              </select>
+              <button class="btn small">保存</button>
+            </form>
+          </td>
+          <td>
+            {% if s.entries %}<a href="/?skill={{ s.name | urlencode }}">{{ s.entries | length }} 条</a>{% else %}<span class="muted">未使用</span>{% endif %}
+          </td>
+          <td>
+            {% if skills | length > 1 %}
+            <form method="post" action="/skills/{{ s.id }}/merge" class="skill-row-form"
+                  data-confirm="把「{{ s.name }}」合并到选中的技能？用到它的经历会改用目标技能。">
+              <select name="target_id" required aria-label="合并到">
+                <option value="">选择…</option>
+                {% for t in skills if t.id != s.id %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+              </select>
+              <button class="btn small">合并</button>
+            </form>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="/skills/{{ s.id }}/delete"
+                  data-confirm="删除技能「{{ s.name }}」？{% if s.entries %}{{ s.entries | length }} 条经历会去掉这个标签，经历本身不受影响。{% endif %}">
+              <button class="link-btn danger">删除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}素材库{% endblock %} · Individual Map</title>
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-dot"></span>Individual Map</a>
+    <nav>
+      <a href="/" class="{{ 'active' if nav == 'entries' }}">素材库</a>
+      {% set n_inbox = inbox_count() %}
+      <a href="/inbox" class="{{ 'active' if nav == 'inbox' }}">待归类{% if n_inbox %}<span class="count">{{ n_inbox }}</span>{% endif %}</a>
+      <a href="/skills" class="{{ 'active' if nav == 'skills' }}">技能</a>
+      <a href="/graph" class="{{ 'active' if nav == 'graph' }}">✦ 星图</a>
+      <a href="/export" class="{{ 'active' if nav == 'export' }}">导出与备份</a>
+    </nav>
+    <a class="btn primary" href="/entries/new">+ 新建条目</a>
+  </header>
+
+  {% set msg = request.query_params.get('msg') %}
+  {% if msg %}<div class="flash" role="status">{{ msg }}</div>{% endif %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ static_url('app.js') }}"></script>
+</body>
+</html>

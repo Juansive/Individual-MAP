@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if entry.id else '新建条目' }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <a class="back" href="{{ '/entries/%d' % entry.id if entry.id else '/' }}">← 返回</a>
+  <h1>{{ '编辑：' ~ entry.title if entry.id else '新建条目' }}</h1>
+</div>
+
+<form class="card entry-form" method="post" enctype="multipart/form-data"
+      action="{{ '/entries/%d/edit' % entry.id if entry.id else '/entries/new' }}">
+  <div class="grid">
+    <label>类型
+      <select name="kind">
+        {% for key, k in ENTRY_KINDS.items() %}<option value="{{ key }}" {{ 'selected' if key == entry.kind }}>{{ k.label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="span-2">标题 <input name="title" required value="{{ entry.title }}" placeholder="例如：XX 公司 数据分析实习"></label>
+    <label>机构 <input name="org" value="{{ entry.org }}" placeholder="学校 / 公司 / 主办方 / 颁发单位"></label>
+    <label>角色 / 名次 <input name="role" value="{{ entry.role }}" placeholder="例如：项目负责人、一等奖"></label>
+    <label>级别 <input name="level" value="{{ entry.level }}" list="levels" placeholder="例如：国家级">
+      <datalist id="levels"><option>国际级</option><option>国家级</option><option>省级</option><option>市级</option><option>校级</option><option>院级</option></datalist>
+    </label>
+    <label>开始 / 获得时间 <input type="month" name="start" value="{{ entry.start }}"></label>
+    <label>结束时间 <input type="month" name="end" value="{{ entry.end if entry.end != 'now' }}" {{ 'disabled' if entry.end == 'now' }}></label>
+    <label class="check inline"><input type="checkbox" name="ongoing" value="1" {{ 'checked' if entry.end == 'now' }}> 至今</label>
+  </div>
+
+  <label>描述 <span class="hint">随手写：背景、你做了什么、怎么做的</span>
+    <textarea name="description" rows="5">{{ entry.description }}</textarea>
+  </label>
+  <label>成果要点 <span class="hint">一行一条，尽量带数字：提升了多少、覆盖多少人、排名第几</span>
+    <textarea name="highlights" rows="4" placeholder="模型准确率从 82% 提升到 91%&#10;负责 3 人小组，按期交付">{{ entry.highlights }}</textarea>
+  </label>
+  <label>技能标签 <span class="hint">用逗号或顿号分隔</span>
+    <input name="skills" value="{{ skill_text }}" placeholder="Python、数据分析、团队协作">
+  </label>
+  {% if all_skills %}
+    <div class="chips pickable">
+      {% for s in all_skills %}<button type="button" class="chip" data-skill="{{ s.name }}">+ {{ s.name }}</button>{% endfor %}
+    </div>
+  {% endif %}
+
+  <label class="dropzone">
+    <input type="file" name="files" multiple>
+    <span class="dz-text">添加证明文件：拖到这里或点击选择</span>
+  </label>
+
+  <div class="form-actions">
+    <button class="btn primary">保存</button>
+    <a class="btn ghost" href="{{ '/entries/%d' % entry.id if entry.id else '/' }}">取消</a>
+  </div>
+</form>
+{% endblock %}

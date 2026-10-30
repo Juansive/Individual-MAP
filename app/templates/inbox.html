@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_macros.html" import file_tile %}
+{% block title %}待归类{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>待归类</h1>
+  <p class="muted">把散落在电脑、微信、邮箱里的证书、奖状、截图先全部丢进来，内容相同的文件只会存一份。之后再一个个归到条目上，或者直接用文件新建条目。</p>
+</div>
+
+<form class="card" method="post" action="/inbox/upload" enctype="multipart/form-data">
+  <label class="dropzone tall" data-autosubmit>
+    <input type="file" name="files" multiple>
+    <span class="dz-text">拖入任意多个文件，或点击选择，自动保存</span>
+  </label>
+</form>
+
+{% if files %}
+  <div class="file-grid wide">
+    {% for att in files %}
+      {% call file_tile(att, '/inbox') %}
+        <div class="assign-box">
+          {% if entries %}
+          <form method="post" action="/files/{{ att.id }}/assign" class="assign-form">
+            <input type="hidden" name="next" value="/inbox">
+            <select name="entry_id" required aria-label="归到条目">
+              <option value="">归到条目…</option>
+              {% for e in entries %}<option value="{{ e.id }}">{{ e.title }}（{{ e.period_text() }}）</option>{% endfor %}
+            </select>
+            <button class="btn small">归类</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/files/{{ att.id }}/new-entry"><button class="btn small ghost">用它新建条目</button></form>
+        </div>
+      {% endcall %}
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty">待归类是空的 👍</div>
+{% endif %}
+{% endblock %}
