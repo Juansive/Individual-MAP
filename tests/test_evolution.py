@@ -3,7 +3,8 @@ import random
 
 from sqlmodel import Session, select
 
-from app.levels import BLACK_HOLE_CHANCE, EVOLUTION_PATHS, kind_growth, path_weights, roll_path
+from app.levels import (BLACK_HOLE_CHANCE, EVOLUTION_PATHS, black_hole_chance, kind_growth, path_weights,
+                        roll_path)
 from app.models import Entry, KindEvolution, Skill
 from tests.test_levels import att
 
@@ -57,6 +58,38 @@ def test_roll_path_frequencies():
     assert abs(results.count("blackhole") / n - BLACK_HOLE_CHANCE) < 0.01
     assert abs(results.count("star") / n - (1 - BLACK_HOLE_CHANCE) * 0.75) < 0.015
     assert "nebula" not in results                    # 权重 0 的路线不会被抽中
+
+
+def test_black_hole_chance_rises_until_pity():
+    # 还没出过黑洞：15% → 25% → 35% → 45% → 第 5 次必出
+    assert [round(black_hole_chance(m, False), 2) for m in range(5)] == [0.15, 0.25, 0.35, 0.45, 1.0]
+    assert black_hole_chance(7, False) == 1.0                 # 旧规则下已经错过很多次，下次就必出
+    assert black_hole_chance(3, True) == BLACK_HOLE_CHANCE    # 出过黑洞之后，保底不再累加
+    assert roll_path({"star": 1}, FakeRng(0.999), chance=1.0) == "blackhole"
+
+
+def test_fifth_fork_is_guaranteed_black_hole(client, make_entry, monkeypatch):
+    # 5 个大类同时升到 Lv3：随机数永远不够小，前 4 个按权重走常规路线，第 5 个靠保底抽中黑洞
+    for kind in ("education", "research", "volunteer"):         # 目标 2 条：一条 Lv2（2 点）= 20%
+        make_entry(kind=kind, title=f"{kind}-1", start="2024-01", description="有描述")
+    for kind in ("internship", "campus"):                       # 目标 3 条：Lv2 + Lv1（3 点）= 20%
+        make_entry(kind=kind, title=f"{kind}-1", start="2024-01", description="有描述")
+        make_entry(kind=kind, title=f"{kind}-2")
+    monkeypatch.setattr("app.levels.random", FakeRng(0.99))
+    graph = client.get("/api/graph").json()
+    # 按 ENTRY_KINDS 的顺序分叉：education、internship、research、campus，第 5 个是 volunteer
+    assert _paths() == {"education": "star", "internship": "star", "research": "star",
+                        "campus": "star", "volunteer": "blackhole"}
+    assert graph["evolution"] == {"blackHoleFound": True, "blackHoleChance": BLACK_HOLE_CHANCE, "pityLeft": 0}
+
+
+def test_graph_reports_pity_progress(client, make_entry, monkeypatch):
+    graph = client.get("/api/graph").json()
+    assert graph["evolution"] == {"blackHoleFound": False, "blackHoleChance": 0.15, "pityLeft": 5}
+    make_entry(kind="education", title="本科", start="2021-09", description="计算机")
+    monkeypatch.setattr("app.levels.random", FakeRng(0.99))
+    graph = client.get("/api/graph").json()                     # 第 1 次分叉没中
+    assert graph["evolution"]["pityLeft"] == 4 and round(graph["evolution"]["blackHoleChance"], 2) == 0.25
 
 
 def _paths():

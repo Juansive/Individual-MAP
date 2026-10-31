@@ -1379,6 +1379,7 @@ async function celebrate({ ups, newlyLit, newPaths }) {
 // 只有一个节点就直接飞过去；多个就一起点亮、镜头框住它们，再点一次就在它们之间依次切换。
 
 let levelTables = { entry: [], kind: [], paths: [] };
+let evolutionInfo = null;  // 黑洞保底进度：{ blackHoleFound, blackHoleChance, pityLeft }
 const ACHV_GROUPS = [
   { type: "kind", title: "大类", badge: "◆" },
   { type: "entry", title: "经历", badge: "●" },
@@ -1404,6 +1405,13 @@ function closestToUpgrade() {
     .filter((n) => n.type === "entry" && isVisible(n) && n.nextSteps.length)
     .sort((a, b) => b.growth - a.growth || a.nextSteps.length - b.nextSteps.length)[0];
   return [kind, entry].filter(Boolean);
+}
+
+// 黑洞保底提示：还没出过黑洞时显示下次分叉的概率和还差几次必出；出过就不显示
+function blackHolePityText() {
+  if (!evolutionInfo || evolutionInfo.blackHoleFound) return "";
+  if (evolutionInfo.pityLeft <= 1) return "黑洞保底：下次分叉必出黑洞！";
+  return `黑洞保底：下次分叉 ${Math.round(evolutionInfo.blackHoleChance * 100)}%，最晚再分叉 ${evolutionInfo.pityLeft} 次必出`;
 }
 
 function renderAchievements() {
@@ -1434,10 +1442,13 @@ function renderAchievements() {
     const found = new Set(foundPaths());
     html += `<div class="achv-group"><div class="achv-title"><b>进化路线</b>
       <span class="achv-count">已发现 ${found.size} / ${paths.length}</span></div><div class="path-chips">`;
+    const pity = blackHolePityText();
     html += paths.map((p) => (found.has(p.key)
       ? `<button type="button" class="path-chip" data-path="${p.key}" title="${esc(p.name)}：点击飞过去">${p.icon}<span>${esc(p.name)}</span></button>`
-      : `<span class="path-chip unknown" title="还没有大类走上这条路">？</span>`)).join("");
-    html += "</div></div>";
+      : `<span class="path-chip unknown" title="${p.key === "blackhole" && pity ? pity : "还没有大类走上这条路"}">？</span>`)).join("");
+    html += "</div>";
+    if (pity) html += `<div class="path-pity">⚫ ${pity}</div>`;
+    html += "</div>";
   }
   for (const n of closestToUpgrade()) {
     html += `<button type="button" class="achv-next" data-id="${esc(n.id)}">🎯 离升级最近：${esc(n.label)}（Lv.${n.growth} → ${n.growth + 1}）
@@ -1724,6 +1735,7 @@ fetch("/api/graph").then((r) => r.json()).then((data) => {
 
   graphData = data;
   levelTables = data.levels;
+  evolutionInfo = data.evolution ?? null;
   playIntro(data.nodes);
   Graph.graphData(data);
   applyVisibility();
