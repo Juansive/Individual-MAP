@@ -73,7 +73,7 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink]) -> dict:
             "files": len(e.attachments),
             "issues": issues,
             "url": f"/entries/{e.id}",
-            # 成长等级（见 levels.py）：决定卫星、星环等特效
+            # 成长等级（见 levels.py）：决定卫星、光晕、星芒等特效
             "growth": growth.level,
             "growthName": growth.name,
             "progress": growth.progress,
@@ -95,7 +95,7 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink]) -> dict:
         nodes.append({"id": f"skill:{sid}", "type": "skill", "label": s["name"], "color": cat.color,
                       "category": s["category"], "categoryLabel": cat.label,
                       "size": 3 + len(s["entries"]) * 1.2, "count": len(s["entries"]),
-                      "star": len(s["entries"]) >= STAR_SKILL_MIN,  # 核心技能：带星环
+                      "star": len(s["entries"]) >= STAR_SKILL_MIN,  # 核心技能：带晶体外壳
                       "url": f"/?skill={quote(s['name'])}"})
     for name, ids in orgs.items():
         nodes.append({"id": f"org:{name}", "type": "org", "label": name, "color": ORG_COLOR,

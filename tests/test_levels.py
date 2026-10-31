@@ -22,7 +22,7 @@ def test_levels_climb_step_by_step():
 
     e.org = "XX大学"
     g = entry_growth(e)
-    assert (g.level, g.name) == (4, "环带行星")
+    assert (g.level, g.name) == (4, "光晕行星")
     assert g.next_steps == ["再写 2 条带数字的成果", "再加 2 个技能标签（或者级别是国家级/国际级）"]
 
     e.level = "国家级"
@@ -78,7 +78,7 @@ def test_graph_api_carries_growth(client, make_entry):
     assert len(graph["levels"]["entry"]) == 5
     nodes = {n["label"]: n for n in graph["nodes"]}
     assert nodes["随手记"]["growth"] == 1 and nodes["随手记"]["satellites"] == []
-    assert nodes["完整的"]["growth"] == 4 and nodes["完整的"]["growthName"] == "环带行星"
+    assert nodes["完整的"]["growth"] == 4 and nodes["完整的"]["growthName"] == "光晕行星"
     assert nodes["完整的"]["satellites"] == [{"type": "highlight", "label": "完成 3 件事"}]
     assert nodes["Python"]["star"] is True          # 4 条经历用到，成为核心技能
 

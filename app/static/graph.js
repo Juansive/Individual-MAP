@@ -92,6 +92,39 @@ const SHOCK_TEXTURE = canvasTexture(256, (ctx, s) => {
   ctx.stroke();
 });
 
+// 分支 Lv4 的柔光晕：中间空、贴着球边最亮、向外慢慢散开（不是一道清晰的环）
+const SOFT_HALO_TEXTURE = canvasTexture(128, (ctx, s) => {
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(255,255,255,0)");
+  g.addColorStop(0.38, "rgba(255,255,255,0)");
+  g.addColorStop(0.5, "rgba(255,255,255,.6)");
+  g.addColorStop(0.62, "rgba(255,255,255,.2)");
+  g.addColorStop(0.8, "rgba(255,255,255,.04)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+});
+
+// 分支 Lv5 的十字星芒：上下左右四道细长光芒。中间留空，光芒从球的边缘外才亮起，闪的时候不会把球盖住
+const SPARKLE_TEXTURE = canvasTexture(256, (ctx, s) => {
+  ctx.translate(s / 2, s / 2);
+  for (let i = 0; i < 4; i++) {
+    ctx.rotate(Math.PI / 2);
+    const g = ctx.createLinearGradient(0, 0, s / 2, 0);
+    g.addColorStop(0, "rgba(255,255,255,0)");
+    g.addColorStop(0.14, "rgba(255,255,255,0)");
+    g.addColorStop(0.22, "rgba(255,255,255,1)");
+    g.addColorStop(0.45, "rgba(255,255,255,.4)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.lineTo(s / 2, 0);
+    ctx.lineTo(0, 6);
+    ctx.fill();
+  }
+});
+
 // “玻璃珠”材质：中心暗而通透，边缘一圈亮的轮廓光（Fresnel 效果），像显微镜下的神经元胞体
 function orbMaterial(color) {
   return new THREE.ShaderMaterial({
@@ -223,8 +256,9 @@ function makeNodeObject(node) {
 
   // ---- 成长特效（等级规则见 app/levels.py）
   // 按层级分配，保证大类始终比它的分支更耀眼：
-  //   分支：卫星（Lv3+）、星环（Lv4+，Lv5 更亮）
-  //   核心技能（被 4 条以上经历用到）：星环
+  //   分支：卫星（Lv3+）、柔光晕（Lv4+）、十字星芒（Lv5，偶尔一闪）
+  //   核心技能（被 4 条以上经历用到）：缓慢旋转的晶体外壳
+  //   星环只留给大类，分支和技能都不用环，免得看起来都一样
   //   大类 8 级，每升一级多一样：星雾 → 变大变亮 → 伴星 → 星环 → 第二道星环 → 日冕 → 双臂星系盘 → 三臂星系盘 + 金色光晕
   const white = new THREE.Color(1, 1, 1);
   const kindLv = node.type === "kind" ? node.growth : 0;
@@ -280,8 +314,36 @@ function makeNodeObject(node) {
     s.type === "file" ? new THREE.Color("#ffe2a0") : color.clone().lerp(white, 0.5),
     Math.max(0.45, r * 0.16), r * (2.1 + i * 0.35), 0.5 + Math.random() * 0.6,
   ));
-  if (node.type === "entry" && node.growth >= 4) addBelts(TILT_A, 1, node.growth >= 5 ? [0.85, 0.4] : [0.55, 0.25]);
-  if (node.star) addBelts(TILT_A, 1, [0.55, 0.25]);
+  const gold = new THREE.Color("#ffd27a");
+  const entryLv = node.type === "entry" ? node.growth : 0;
+  if (entryLv >= 4) addAura(SOFT_HALO_TEXTURE, gold.clone().lerp(white, 0.25), 4.4, entryLv >= 5 ? 0.7 : 0.55, true);  // Lv4 柔光晕
+
+  // Lv5 十字星芒：平时淡淡的，每隔几秒“叮”地亮一下（相位随机，免得所有星芒一起闪）
+  let sparkle = null;
+  if (entryLv >= 5) {
+    sparkle = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: SPARKLE_TEXTURE, color: gold.clone().lerp(white, 0.5), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+    sparkle.scale.setScalar(r * 7);
+    sparkle.raycast = noRaycast;
+    sparkle.userData = { phase: Math.random() * Math.PI * 2, size: r * 7 };
+    group.add(sparkle);
+  }
+
+  // 核心技能：外面套一层缓慢旋转的线框二十面体，像晶体
+  let crystal = null;
+  if (node.star) {
+    crystal = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(r * 1.75)),
+      new THREE.LineBasicMaterial({
+        color: color.clone().lerp(white, 0.4), transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    crystal.raycast = noRaycast;
+    group.add(crystal);
+  }
 
   // 大类逐级叠加
   if (kindLv >= 1) addAura(GLOW_TEXTURE, color, 7, 0.12);                          // Lv1 星雾
@@ -307,7 +369,7 @@ function makeNodeObject(node) {
 
   // 动画状态：fade 明暗（1 = 正常，接近 0 = 被淡化），boost 悬停加亮，pulse 放电闪光
   node.__parts = {
-    group, shell, nucleus, halo, ring, label, sats, belts, coronas, galaxy, auras,
+    group, shell, nucleus, halo, ring, label, sats, belts, coronas, galaxy, auras, sparkle, crystal,
     baseOpacity: dim ? 0.55 : 1,
     baseHalo: (node.type === "me" ? 0.35 : dim ? 0.12 : 0.22) * (kindLv >= 6 ? 1.6 : kindLv >= 2 ? 1.3 : 1),
     fade: 1, targetFade: 1, boost: 0, targetBoost: 0, pulse: 0, labelOpacity: 1,
@@ -1129,6 +1191,18 @@ function animate(now) {
     if (p.galaxy) {
       p.galaxy.disc.rotation.y += dt * 0.12;
       p.galaxy.disc.material.opacity = 0.75 * fade;
+    }
+    if (p.sparkle) {
+      // 尖峰函数：大部分时间接近 0，大约每 7 秒冒一次尖，像星星“叮”地闪一下
+      const flash = Math.max(0, Math.sin(now / 1000 * 0.9 + p.sparkle.userData.phase)) ** 12;
+      p.sparkle.material.opacity = (0.22 + 0.78 * flash) * fade;
+      p.sparkle.material.rotation = flash * 0.4;  // 闪的时候顺手转一点点
+      p.sparkle.scale.setScalar(p.sparkle.userData.size * (0.85 + 0.45 * flash));
+    }
+    if (p.crystal) {
+      p.crystal.rotation.y += dt * 0.25;
+      p.crystal.rotation.x += dt * 0.09;
+      p.crystal.material.opacity = 0.42 * fade;
     }
     if (p.label) {
       const o = fade < 0.5 ? fade * 0.6 : fade;
