@@ -35,6 +35,22 @@ a:hover { text-decoration: underline; }
 .left-col .hud { position: static; }
 .top-left { flex-shrink: 0; }
 
+/* 左栏抽屉：收起时整列移出屏幕，只留右边缘的把手（滑动的过渡写在下面“沉浸模式”那里） */
+.left-col.collapsed { transform: translateX(calc(-100% - 16px)); }
+.drawer-grip {
+  position: absolute; top: 50%; right: -17px; width: 13px; height: 56px; margin-top: -28px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 0 8px 8px 0; cursor: grab; touch-action: none;
+  color: var(--muted); font: 600 12px/1 sans-serif;
+  background: var(--glass); border: 1px solid var(--glass-border); border-left: 0;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  transition: color .2s, background .2s;
+}
+.drawer-grip::before { content: "‹"; }
+.left-col.collapsed .drawer-grip::before { content: "›"; }
+.drawer-grip:hover { color: var(--text); background: rgba(40, 46, 70, .8); }
+.drawer-grip:active { cursor: grabbing; }
+
 /* 点亮进度 */
 .achv { padding: 0; display: flex; flex-direction: column; min-height: 0; }
 .achv-head {
@@ -112,11 +128,23 @@ input[type=search]:focus { outline: none; border-color: var(--accent); }
 }
 .toggle select:hover, .toggle select:focus { outline: none; border-color: var(--accent); }
 .toggle option { background: #141826; color: var(--text); }
-button#reset {
+.top-right button {
   padding: 4px 10px; border-radius: 8px; font: inherit; cursor: pointer;
   color: var(--text); background: rgba(255, 255, 255, .06); border: 1px solid var(--glass-border);
 }
-button#reset:hover { border-color: var(--accent); }
+.top-right button:hover { border-color: var(--accent); }
+
+/* 沉浸模式：面板淡出，只留星图和角落的小眼睛 */
+.left-col, .top-right, .bottom-left, .panel, .home-btn { transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .4s, visibility .4s; }
+body.immersive :is(.left-col, .top-right, .bottom-left, .panel, .home-btn) { opacity: 0; visibility: hidden; }
+.immersive-exit {
+  position: fixed; z-index: 7; top: 16px; right: 16px; width: 34px; height: 34px; padding: 0;
+  border-radius: 50%; cursor: pointer; font-size: 15px; color: var(--text);
+  background: var(--glass); border: 1px solid var(--glass-border);
+  opacity: 0; visibility: hidden; transition: opacity .4s, visibility .4s;
+}
+body.immersive .immersive-exit { opacity: .3; visibility: visible; }
+body.immersive .immersive-exit:hover { opacity: 1; }
 
 /* 节点文字标签（网页文字，清晰、不被辉光糊掉） */
 .node-label {
@@ -245,9 +273,9 @@ button#reset:hover { border-color: var(--accent); }
 
 @media (max-width: 720px) {
   .left-col { width: auto; right: 16px; max-height: 60vh; }
-  .home-btn { bottom: 80px; }  /* 窄屏时底部是开关栏，小房子往上挪 */
+  .home-btn { bottom: 116px; }  /* 窄屏时底部是开关栏（两行），小房子往上挪 */
   .top-left { width: auto; }
-  .top-right { top: auto; bottom: 16px; right: 16px; left: 16px; justify-content: space-between; }
+  .top-right { top: auto; bottom: 16px; right: 16px; left: 16px; flex-wrap: wrap; gap: 8px 14px; }
   .bottom-left { display: none; }
   .panel { top: auto; left: 16px; width: auto; height: 50vh; }
 }

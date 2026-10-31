@@ -16,6 +16,8 @@ const state = {
   group: null,         // 点亮面板里点了某个等级后，一起高亮的那组节点
   achvCollapsed: false,
   linkMode: "simple",  // 连线开关，见 linkModeAllows()
+  drawerCollapsed: false,  // 左栏抽屉收起
+  immersive: false,        // 沉浸模式（不记住，每次打开都是正常模式）
   userMoved: false,  // 用户动过镜头或拖过小球后，就不再自动调整镜头
 };
 const highlightNodes = new Set();
@@ -1074,7 +1076,7 @@ function savePrefs() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       layered: state.layered, lowFx: state.lowFx, achvCollapsed: state.achvCollapsed,
-      linkMode: state.linkMode,
+      linkMode: state.linkMode, drawerCollapsed: state.drawerCollapsed,
     }));
   } catch {
     // 存不了就算了，不影响使用
@@ -1352,6 +1354,76 @@ linkModeSelect.addEventListener("change", (e) => {
   state.linkMode = e.target.value;
   refreshLinks();
   savePrefs();
+});
+
+// 左栏抽屉：右边缘的把手点一下收起/展开；按住左右拖，松手时拖过一半就收起，否则弹回
+const leftCol = document.querySelector(".left-col");
+const grip = document.getElementById("drawer-grip");
+let gripDrag = null;
+
+function setDrawer(collapsed) {
+  state.drawerCollapsed = collapsed;
+  leftCol.classList.toggle("collapsed", collapsed);
+  grip.setAttribute("aria-expanded", String(!collapsed));
+  grip.title = collapsed ? "展开左栏（可拖动）" : "收起左栏（可拖动）";
+}
+
+grip.addEventListener("pointerdown", (e) => {
+  grip.setPointerCapture(e.pointerId);
+  const width = leftCol.offsetWidth + 16;  // 收起时整列要移出屏幕的距离（含左边距）
+  gripDrag = { x: e.clientX, width, from: state.drawerCollapsed ? -width : 0, offset: 0, moved: false };
+  leftCol.style.transition = "none";  // 拖动时跟手，不要过渡
+});
+grip.addEventListener("pointermove", (e) => {
+  if (!gripDrag) return;
+  const dx = e.clientX - gripDrag.x;
+  if (Math.abs(dx) > 4) gripDrag.moved = true;  // 动了几个像素以内算点击
+  if (!gripDrag.moved) return;
+  gripDrag.offset = Math.min(0, Math.max(-gripDrag.width, gripDrag.from + dx));
+  leftCol.style.transform = `translateX(${gripDrag.offset}px)`;
+});
+function endGripDrag(cancelled) {
+  if (!gripDrag) return;
+  const { moved, offset, width } = gripDrag;
+  gripDrag = null;
+  // 去掉拖动时的内联样式，交给 .collapsed 类，过渡动画会从松手的位置滑到终点
+  leftCol.style.transition = leftCol.style.transform = "";
+  if (moved) setDrawer(offset < -width / 2);
+  else if (!cancelled) setDrawer(!state.drawerCollapsed);
+  savePrefs();
+}
+grip.addEventListener("pointerup", () => endGripDrag(false));
+grip.addEventListener("pointercancel", () => endGripDrag(true));
+grip.addEventListener("click", (e) => {
+  if (e.detail === 0) {  // 键盘（回车、空格）触发的点击；鼠标点击已经在 pointerup 里处理了
+    setDrawer(!state.drawerCollapsed);
+    savePrefs();
+  }
+});
+// 恢复上次的状态：打开页面时直接就位，不播滑动动画
+leftCol.style.transition = "none";
+setDrawer(prefs.drawerCollapsed ?? false);
+leftCol.offsetWidth;  // 强制浏览器先应用上面的位置，再恢复过渡
+leftCol.style.transition = "";
+
+// 沉浸模式：只想欣赏星图时，隐藏所有面板，只留星图慢慢自转。H 切换，Esc 退出，角落的小眼睛也能退出
+function setImmersive(on) {
+  state.immersive = on;
+  document.body.classList.toggle("immersive", on);
+  if (on) {
+    clearSelection();
+    Graph.controls().autoRotate = true;  // 直接开始自转，不用等 6 秒
+  }
+}
+
+document.getElementById("immersive").addEventListener("click", () => setImmersive(true));
+document.getElementById("immersive-exit").addEventListener("click", () => setImmersive(false));
+addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  // 在搜索框里打字时不响应
+  if (e.target instanceof Element && e.target.closest("input, select, textarea, [contenteditable]")) return;
+  if (e.key === "h" || e.key === "H") setImmersive(!state.immersive);
+  else if (e.key === "Escape" && state.immersive) setImmersive(false);
 });
 
 document.getElementById("reset").addEventListener("click", () => {
