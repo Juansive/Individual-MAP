@@ -1,14 +1,14 @@
 """成长等级：经历越充实、大类积累越多，星图里的球越有“排面”。
 
 特效按层级分配，保证大类始终比它下面的分支更耀眼：
-- 分支（单条经历）：卫星（每颗代表一个证明文件或成果要点）、完整后的星环
+- 分支（单条经历）：卫星（每颗代表一个证明文件或成果要点）、完整后的柔光晕、满级的十字星芒
 - 大类（教育经历、竞赛……）：随等级变大，每升一级多一样东西（见 KIND_LEVELS）
 
 分支等级（反映这条经历写得多完整）：
     Lv1 星尘      只有标题
     Lv2 行星      有时间和描述（或成果要点）
     Lv3 卫星行星  再有证明文件或成果要点
-    Lv4 环带行星  完整度检查全部通过
+    Lv4 光晕行星  完整度检查全部通过
     Lv5 闪耀行星  完整，且（2 条以上带数字的成果 + 2 个以上技能，或者级别为国家级/国际级）
 每一级都要求先满足上一级。
 
@@ -17,23 +17,45 @@
     进度 = 成长值 ÷ 满级目标（最多 100%），按 KIND_LEVELS 的门槛分成 8 级：前面密、后面疏，
     刚开始很快就能升级，越往后越难。满级始终是 100%，所以每个大类都有机会到顶。
 不同大类天然条数差别大（教育一般 1~3 条，奖项可能十几条），所以每类有自己的目标条数。
+
+进化分支：Lv1 星云、Lv2 原恒星所有大类一样；升到 Lv3 时分叉，选定一条进化路线（EVOLUTION_PATHS），
+Lv3~Lv8 的名字和外观按路线走。路线第一次升到 Lv3 时掷骰子决定（roll_path），存进数据库后不再改变：
+先以 BLACK_HOLE_CHANCE 的概率抽中稀有的黑洞之路，否则按这个大类的数据偏向（path_weights）在三条常规路线里随机。
 """
 import math
+import random
 import re
 from dataclasses import dataclass, field
 
 from app.completeness import check_entry
 from app.models import Entry
 
-ENTRY_LEVEL_NAMES = {1: "星尘", 2: "行星", 3: "卫星行星", 4: "环带行星", 5: "闪耀行星"}
+ENTRY_LEVEL_NAMES = {1: "星尘", 2: "行星", 3: "卫星行星", 4: "光晕行星", 5: "闪耀行星"}
 
-# 大类 8 级：(进度门槛 %, 名字)。星图里每升一级多一样外观：
-# 星雾 → 变大变亮 → 伴星 → 星环 → 第二道星环 → 日冕 → 双臂星系盘 → 三臂星系盘 + 金色光晕
+# 大类 8 级：(进度门槛 %, 通用阶段名)。Lv3 起的具体名字按进化路线（见 EVOLUTION_PATHS），
+# 点亮面板里不分路线，用这里的通用阶段名
 KIND_LEVELS = [
-    (0, "星云"), (10, "原恒星"), (20, "星团"), (35, "环带恒星"),
-    (50, "双环恒星"), (65, "日冕恒星"), (80, "旋涡星系"), (100, "璀璨星系"),
+    (0, "星云"), (10, "原恒星"), (20, "分化"), (35, "崛起"),
+    (50, "成熟"), (65, "辉耀"), (80, "星系"), (100, "传奇"),
 ]
 KIND_LEVEL_NAMES = {i + 1: name for i, (_, name) in enumerate(KIND_LEVELS)}
+FORK_LEVEL = 3  # 从这一级开始分叉
+
+
+@dataclass(frozen=True)
+class EvolutionPath:
+    name: str
+    icon: str
+    stage_names: tuple[str, ...]  # Lv3 ~ Lv8 的名字
+
+
+EVOLUTION_PATHS: dict[str, EvolutionPath] = {
+    "star": EvolutionPath("恒星之路", "☀️", ("伴星恒星", "光冕恒星", "日珥恒星", "日冕恒星", "旋涡星系", "璀璨星系")),
+    "planet": EvolutionPath("行星之路", "🪐", ("卫星群", "环带行星", "双环行星", "环带卫星系", "环带星系", "王冠环系")),
+    "nebula": EvolutionPath("星云之路", "🌌", ("星云丝", "星云团", "脉冲星云", "极光星云", "星云海", "超新星遗迹")),
+    "blackhole": EvolutionPath("黑洞之路", "⚫", ("暗核", "吸积黑洞", "透镜黑洞", "喷流黑洞", "双喷流黑洞", "类星体")),
+}
+BLACK_HOLE_CHANCE = 0.08  # 稀有路线，和数据无关
 
 # 每个大类大约需要几条写满（Lv5）的经历才算满级
 KIND_TARGETS = {
@@ -108,25 +130,48 @@ class KindGrowth(Growth):
     need: int = 0  # 升到下一级还差几点成长值；满级为 0（“离升级最近”用）
 
 
-def kind_growth(kind: str, entry_levels: list[int]) -> KindGrowth:
-    """大类等级：由下面所有经历的等级累积而来。"""
+def kind_growth(kind: str, entry_levels: list[int], path: str = "") -> KindGrowth:
+    """大类等级：由下面所有经历的等级累积而来。path 是进化路线，Lv3 起按路线取名；没有就用通用阶段名。"""
     goal = KIND_TARGETS.get(kind, 3) * 5
     points = sum(entry_levels)
     # 用整数比较门槛（成长值 × 100 ≥ 目标 × 百分比），避免小数误差
     level = max(i + 1 for i, (pct, _) in enumerate(KIND_LEVELS) if points * 100 >= goal * pct)
-    growth = KindGrowth(level, KIND_LEVEL_NAMES[level], min(1.0, points / goal))
+    name = KIND_LEVEL_NAMES[level]
+    if level >= FORK_LEVEL and path in EVOLUTION_PATHS:
+        name = EVOLUTION_PATHS[path].stage_names[level - FORK_LEVEL]
+    growth = KindGrowth(level, name, min(1.0, points / goal))
     if level < len(KIND_LEVELS):
         growth.need = math.ceil(goal * KIND_LEVELS[level][0] / 100) - points
         growth.next_steps = [f"再攒 {growth.need} 点成长值升到 Lv.{level + 1}"
                              "（每条经历按等级计 1~5 点，新增或补全经历都算）"]
+        if level + 1 == FORK_LEVEL:
+            growth.next_steps.append("升到 Lv.3 时会分化出一条进化路线")
     return growth
 
 
+def path_weights(entries: list[Entry], relation_count: int) -> dict[str, int]:
+    """三条常规路线的权重：这个大类的数据偏向哪方面，就更容易走哪条路。"""
+    return {
+        "star": 1 + sum(quantified_count(e) for e in entries),                 # 发光发热：带数字的成果
+        "planet": 1 + sum(len(e.attachments) for e in entries),               # 证据环绕：证明文件
+        "nebula": 1 + sum(len(e.skills) for e in entries) + relation_count,   # 连接弥散：技能标签和关联
+    }
+
+
+def roll_path(weights: dict[str, int], rng: random.Random | None = None) -> str:
+    """掷骰子选进化路线。rng 可以传进来，测试时用固定的随机数。"""
+    rng = rng or random
+    if rng.random() < BLACK_HOLE_CHANCE:
+        return "blackhole"
+    return rng.choices(list(weights), weights=list(weights.values()))[0]
+
+
 def level_tables() -> dict:
-    """两套等级的名称表，星图的“点亮进度”面板用。"""
+    """等级名称表和进化路线表，星图的“点亮进度”面板用。"""
     return {
         "entry": [{"level": lv, "name": name} for lv, name in ENTRY_LEVEL_NAMES.items()],
         "kind": [{"level": lv, "name": name} for lv, name in KIND_LEVEL_NAMES.items()],
+        "paths": [{"key": key, "name": p.name, "icon": p.icon} for key, p in EVOLUTION_PATHS.items()],
     }
 
 

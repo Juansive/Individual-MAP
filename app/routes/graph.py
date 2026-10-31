@@ -11,8 +11,10 @@ from sqlmodel import Session, select
 
 from app.completeness import check_entry
 from app.db import get_session
-from app.levels import STAR_SKILL_MIN, entry_growth, kind_growth, level_tables, satellites
-from app.models import ENTRY_KINDS, RELATIONS, SKILL_CATEGORIES, Entry, EntryLink, skill_category
+from app.levels import (EVOLUTION_PATHS, FORK_LEVEL, STAR_SKILL_MIN, entry_growth, kind_growth, level_tables,
+                        path_weights, roll_path, satellites)
+from app.models import (ENTRY_KINDS, RELATIONS, SKILL_CATEGORIES, Entry, EntryLink, KindEvolution,
+                        skill_category)
 from app.web import templates
 
 router = APIRouter()
@@ -31,10 +33,32 @@ def richness(entry: Entry) -> int:
     return score
 
 
-def build_graph(entries: list[Entry], entry_links: list[EntryLink]) -> dict:
+def ensure_paths(session: Session, entries: list[Entry], entry_links: list[EntryLink],
+                 rng=None) -> dict[str, str]:
+    """返回每个大类的进化路线。大类第一次升到 Lv3 时掷骰子选一条并存下来，之后不再改变。"""
+    paths = {row.kind: row.path for row in session.exec(select(KindEvolution)).all()}
+    added = False
+    for key in ENTRY_KINDS:
+        group = [e for e in entries if e.kind == key]
+        if key in paths or not group:
+            continue
+        if kind_growth(key, [entry_growth(e).level for e in group]).level < FORK_LEVEL:
+            continue
+        ids = {e.id for e in group}
+        relations = sum(1 for link in entry_links if link.from_id in ids or link.to_id in ids)
+        paths[key] = roll_path(path_weights(group, relations), rng)
+        session.add(KindEvolution(kind=key, path=paths[key]))
+        added = True
+    if added:
+        session.commit()
+    return paths
+
+
+def build_graph(entries: list[Entry], entry_links: list[EntryLink], paths: dict[str, str] | None = None) -> dict:
     nodes = [{"id": "me", "type": "me", "label": "我", "color": ME_COLOR, "size": 14,
               "count": len(entries)}]
     links = []
+    paths = paths or {}
 
     growths = {e.id: entry_growth(e) for e in entries}
 
@@ -42,11 +66,15 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink]) -> dict:
     for key, kind in ENTRY_KINDS.items():
         levels = [growths[e.id].level for e in entries if e.kind == key]
         if levels:
-            growth = kind_growth(key, levels)
+            growth = kind_growth(key, levels, paths.get(key, ""))
+            # 进化路线只在 Lv3 及以上生效（经历删掉后掉回 Lv2，路线仍然记着，再升上来还是它）
+            path = paths.get(key, "") if growth.level >= FORK_LEVEL else ""
+            evo = EVOLUTION_PATHS.get(path)
             nodes.append({"id": f"kind:{key}", "type": "kind", "kind": key, "label": kind.label,
                           "color": kind.color, "size": 5 + growth.level, "count": len(levels),
                           "growth": growth.level, "growthName": growth.name, "need": growth.need,
-                          "progress": growth.progress, "nextSteps": growth.next_steps})
+                          "progress": growth.progress, "nextSteps": growth.next_steps,
+                          "path": path, "pathName": evo.name if evo else "", "pathIcon": evo.icon if evo else ""})
             links.append({"source": "me", "target": f"kind:{key}", "type": "tree"})
 
     skills, orgs = {}, {}
@@ -73,7 +101,7 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink]) -> dict:
             "files": len(e.attachments),
             "issues": issues,
             "url": f"/entries/{e.id}",
-            # 成长等级（见 levels.py）：决定卫星、星环等特效
+            # 成长等级（见 levels.py）：决定卫星、光晕、星芒等特效
             "growth": growth.level,
             "growthName": growth.name,
             "progress": growth.progress,
@@ -95,7 +123,7 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink]) -> dict:
         nodes.append({"id": f"skill:{sid}", "type": "skill", "label": s["name"], "color": cat.color,
                       "category": s["category"], "categoryLabel": cat.label,
                       "size": 3 + len(s["entries"]) * 1.2, "count": len(s["entries"]),
-                      "star": len(s["entries"]) >= STAR_SKILL_MIN,  # 核心技能：带星环
+                      "star": len(s["entries"]) >= STAR_SKILL_MIN,  # 核心技能：带晶体外壳
                       "url": f"/?skill={quote(s['name'])}"})
     for name, ids in orgs.items():
         nodes.append({"id": f"org:{name}", "type": "org", "label": name, "color": ORG_COLOR,
@@ -124,4 +152,6 @@ def graph_page(request: Request):
 
 @router.get("/api/graph")
 def graph_data(session: Session = Depends(get_session)):
-    return build_graph(list(session.exec(select(Entry)).all()), list(session.exec(select(EntryLink)).all()))
+    entries = list(session.exec(select(Entry)).all())
+    entry_links = list(session.exec(select(EntryLink)).all())
+    return build_graph(entries, entry_links, ensure_paths(session, entries, entry_links))

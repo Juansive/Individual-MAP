@@ -4,6 +4,7 @@
 - Skill      技能标签，和条目多对多
 - Attachment 证明文件，属于某个条目；entry_id 为空表示还在“待归类”
 - EntryLink  条目之间的关联（比如奖项来自某个项目）
+- KindEvolution 大类在星图里的进化路线（恒星、行星……），选定后不变
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -120,6 +121,13 @@ class EntryLink(SQLModel, table=True):
     to_id: int = Field(foreign_key="entry.id", index=True)
     relation: str = "related"  # RELATIONS 的 key
     created_at: NaiveDatetime = Field(default_factory=datetime.now)
+
+
+class KindEvolution(SQLModel, table=True):
+    """大类的进化路线：第一次升到 Lv3 时随机选定（见 levels.py 的 EVOLUTION_PATHS），之后不再改变。"""
+    kind: str = Field(primary_key=True)  # ENTRY_KINDS 的 key
+    path: str                            # EVOLUTION_PATHS 的 key
+    chosen_at: NaiveDatetime = Field(default_factory=datetime.now)
 
 
 class Attachment(SQLModel, table=True):

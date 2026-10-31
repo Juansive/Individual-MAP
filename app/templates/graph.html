@@ -33,15 +33,29 @@
     </button>
     <div class="achv-body" id="achv-body"></div>
   </section>
+
+  <!-- 抽屉把手：点击收起/展开，也可以按住左右拖 -->
+  <button type="button" class="drawer-grip" id="drawer-grip" aria-expanded="true" title="收起左栏（可拖动）"></button>
   </div>
 
   <div class="hud top-right">
+    <label class="toggle" title="简洁：平时只显示主干，悬停或选中某个球时才显示它的技能、机构和关联连线">连线
+      <select id="linkmode">
+        <option value="simple">简洁</option>
+        <option value="all">全部</option>
+        <option value="noRelation">全部（不含关联）</option>
+      </select>
+    </label>
     <label class="toggle"><input type="checkbox" id="layered"> 时间分层</label>
     <label class="toggle"><input type="checkbox" id="lowfx"> 低特效</label>
     <button type="button" id="reset">重置视角</button>
+    <button type="button" id="immersive" title="沉浸模式：隐藏所有面板，只看星图（快捷键 H）" aria-label="沉浸模式">👁</button>
   </div>
 
-  <div class="hud bottom-left hint">左键拖动旋转 · 右键拖动平移 · 滚轮缩放 · 拖动小球牵动网络 · 悬停查看 · 单击聚焦</div>
+  <!-- 沉浸模式下唯一留着的按钮：点它或按 Esc 退出 -->
+  <button type="button" class="immersive-exit" id="immersive-exit" title="退出沉浸模式（Esc）" aria-label="退出沉浸模式">👁</button>
+
+  <div class="hud bottom-left hint">左键拖动旋转 · 右键拖动平移 · 滚轮缩放 · 拖动小球牵动网络 · 悬停查看 · 单击聚焦 · H 沉浸模式</div>
 
   <a class="home-btn" href="/" title="回到素材库主页" aria-label="回到素材库主页">
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">

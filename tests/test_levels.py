@@ -22,7 +22,7 @@ def test_levels_climb_step_by_step():
 
     e.org = "XX大学"
     g = entry_growth(e)
-    assert (g.level, g.name) == (4, "环带行星")
+    assert (g.level, g.name) == (4, "光晕行星")
     assert g.next_steps == ["再写 2 条带数字的成果", "再加 2 个技能标签（或者级别是国家级/国际级）"]
 
     e.level = "国家级"
@@ -45,14 +45,14 @@ def test_kind_growth_has_eight_front_loaded_levels():
     # 门槛 0/10/20/35/50/65/80/100%。教育目标 2 条（满级 10 点）
     assert [kind_growth("education", [p]).level for p in (1, 2, 3, 4, 5)] == [2, 3, 3, 4, 5]
     g = kind_growth("education", [5])                       # 5/10 = 50%
-    assert (g.level, g.name, g.progress, g.need) == (5, "双环恒星", 0.5, 2)
+    assert (g.level, g.name, g.progress, g.need) == (5, "成熟", 0.5, 2)   # 没有路线时用通用阶段名
     assert g.next_steps == ["再攒 2 点成长值升到 Lv.6（每条经历按等级计 1~5 点，新增或补全经历都算）"]
     g = kind_growth("education", [5, 5])                    # 100%
-    assert (g.level, g.name, g.need, g.next_steps) == (8, "璀璨星系", 0, [])
+    assert (g.level, g.name, g.need, g.next_steps) == (8, "传奇", 0, [])
 
 
 def test_kind_growth_counts_quantity_and_quality():
-    assert kind_growth("award", [4] * 6).level == 7          # 24/30 = 80% → 旋涡星系
+    assert kind_growth("award", [4] * 6).level == 7          # 24/30 = 80% → Lv7
     assert kind_growth("award", [3] * 12).level == 8         # 36/30，封顶 100%：条数多也能弥补质量
     assert kind_growth("project", [1]).level == 1            # 1/20 = 5%：刚起步
     assert kind_growth("project", [1, 1]).level == 2         # 2/20 = 10%：很快就能升第一级
@@ -74,11 +74,11 @@ def test_graph_api_carries_growth(client, make_entry):
         make_entry(kind="project", title=f"P{i}", skills="Python")
 
     graph = client.get("/api/graph").json()
-    assert [l["name"] for l in graph["levels"]["kind"]][-1] == "璀璨星系" and len(graph["levels"]["kind"]) == 8
+    assert [l["name"] for l in graph["levels"]["kind"]][-1] == "传奇" and len(graph["levels"]["kind"]) == 8
     assert len(graph["levels"]["entry"]) == 5
     nodes = {n["label"]: n for n in graph["nodes"]}
     assert nodes["随手记"]["growth"] == 1 and nodes["随手记"]["satellites"] == []
-    assert nodes["完整的"]["growth"] == 4 and nodes["完整的"]["growthName"] == "环带行星"
+    assert nodes["完整的"]["growth"] == 4 and nodes["完整的"]["growthName"] == "光晕行星"
     assert nodes["完整的"]["satellites"] == [{"type": "highlight", "label": "完成 3 件事"}]
     assert nodes["Python"]["star"] is True          # 4 条经历用到，成为核心技能
 
