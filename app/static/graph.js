@@ -206,6 +206,333 @@ function galaxyDisc(r, color, arms) {
   return { tilt, disc };
 }
 
+// ---------------------------------------------------------------- 大类的进化路线（Lv3 起）
+// 每条路线一个函数，按等级往大类的小球上叠特效。fx 里是 makeNodeObject 提供的材料和工具：
+//   group、r（半径）、color、white、level、shell、nucleus、
+//   addAura / orbiter / addBelts / addProminence（见 makeNodeObject），sats（绕行小球），
+//   updaters：逐帧动画 (dt, 秒, fade) => void，fade 是悬停时的明暗（0~1）
+// 返回 { coronas, galaxy, dark }：日冕、星系盘交给 animate 里原有的代码处理；dark 表示内核变暗（黑洞）。
+
+// 星云丝：几道弯曲的发光细丝，边缘渐隐
+const WISP_TEXTURE = canvasTexture(256, (ctx, s) => {
+  ctx.strokeStyle = "rgba(255,255,255,.55)";
+  ctx.shadowColor = "#fff";
+  ctx.shadowBlur = 16;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 7; i++) {
+    ctx.lineWidth = 3 + Math.random() * 6;
+    ctx.beginPath();
+    const a = Math.random() * Math.PI * 2;
+    ctx.moveTo(s / 2 + Math.cos(a) * s * 0.08, s / 2 + Math.sin(a) * s * 0.08);
+    ctx.bezierCurveTo(
+      Math.random() * s, Math.random() * s, Math.random() * s, Math.random() * s,
+      s / 2 + Math.cos(a + 2) * s * 0.42, s / 2 + Math.sin(a + 2) * s * 0.42,
+    );
+    ctx.stroke();
+  }
+  // 圆形渐隐蒙版：贴图边缘不留硬边
+  const mask = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  mask.addColorStop(0, "rgba(0,0,0,1)");
+  mask.addColorStop(0.6, "rgba(0,0,0,.7)");
+  mask.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = mask;
+  ctx.fillRect(0, 0, s, s);
+});
+
+// 光束：根部亮、末端透明（贴在开口圆柱上，用于脉冲星光束、黑洞喷流）
+const BEAM_TEXTURE = canvasTexture(64, (ctx, s) => {
+  const g = ctx.createLinearGradient(0, s, 0, 0);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.3, "rgba(255,255,255,.45)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+});
+
+// 极光：横向绿 → 青 → 紫的色带，下沿最亮、往上渐隐，带一些竖向的光丝
+const AURORA_TEXTURE = canvasTexture(256, (ctx, s) => {
+  const h = ctx.createLinearGradient(0, 0, s, 0);
+  ["#5cffb0", "#5ce1ff", "#b48cff", "#5cffb0"].forEach((c, i, arr) => h.addColorStop(i / (arr.length - 1), c));
+  ctx.fillStyle = h;
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  for (let x = 0; x < s; x += 3 + Math.random() * 6) ctx.fillRect(x, 0, 1 + Math.random() * 2, s);
+  const v = ctx.createLinearGradient(0, s, 0, 0);
+  v.addColorStop(0, "rgba(0,0,0,0)");
+  v.addColorStop(0.12, "rgba(0,0,0,.9)");
+  v.addColorStop(0.45, "rgba(0,0,0,.35)");
+  v.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, s, s);
+});
+
+// 吸积盘：内圈白热、往外变橙变红，带一些旋转的条纹（贴在 RingGeometry 上，贴图的外圆就是盘的外沿）
+const DISC_TEXTURE = canvasTexture(256, (ctx, s) => {
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(255,255,255,0)");
+  g.addColorStop(0.36, "rgba(255,255,255,0)");
+  g.addColorStop(0.4, "rgba(255,246,225,1)");
+  g.addColorStop(0.55, "rgba(255,170,70,.85)");
+  g.addColorStop(0.8, "rgba(210,70,20,.35)");
+  g.addColorStop(1, "rgba(120,30,10,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = "rgba(255,230,190,.35)";
+  for (let i = 0; i < 26; i++) {
+    const radius = s * (0.21 + Math.random() * 0.26);
+    const start = Math.random() * Math.PI * 2;
+    ctx.lineWidth = 1 + Math.random() * 2;
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, radius, start, start + 0.6 + Math.random() * 1.4);
+    ctx.stroke();
+  }
+});
+
+const additive = (opts) => ({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, ...opts });
+
+// 一道光束：从原点沿 +y 射出的开口圆锥
+function makeBeam(length, width, tint) {
+  const geometry = new THREE.CylinderGeometry(width, width * 0.15, length, 16, 1, true);
+  geometry.translate(0, length / 2, 0);
+  const beam = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(additive({
+    map: BEAM_TEXTURE, color: tint, side: THREE.DoubleSide,
+  })));
+  beam.raycast = noRaycast;
+  return beam;
+}
+
+// 一对方向相反的光束，放在 parent 里（parent 决定朝向）
+function beamPair(parent, length, width, tint) {
+  const up = makeBeam(length, width, tint);
+  const down = makeBeam(length, width, tint);
+  down.rotation.x = Math.PI;
+  parent.add(up, down);
+  return [up, down];
+}
+
+// 一团星云：许多大而淡的光点，颜色在本色附近浮动。flat < 1 时压扁成盘状
+function nebulaCloud(r, color, count, rMin, rMax, flat, size, opacity) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const dir = new THREE.Vector3().randomDirection();
+    const radius = r * (rMin + Math.random() ** 0.7 * (rMax - rMin));
+    positions.set([dir.x * radius, dir.y * radius * flat, dir.z * radius], i * 3);
+    c.copy(color).offsetHSL((Math.random() - 0.5) * 0.3, 0.1, (Math.random() - 0.3) * 0.2);
+    colors.set([c.r, c.g, c.b], i * 3);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const cloud = new THREE.Points(geometry, new THREE.PointsMaterial(additive({
+    size, map: GLOW_TEXTURE, vertexColors: true, opacity,
+  })));
+  cloud.raycast = noRaycast;
+  cloud.userData.base = opacity;
+  return cloud;
+}
+
+// 恒星日冕：两层长短交错的光芒，慢慢转
+function makeCoronas(fx, strong) {
+  return [[7, 0.45], [5, 0.3]].map(([scale, base]) => {
+    const corona = new THREE.Sprite(new THREE.SpriteMaterial(additive({
+      map: CORONA_TEXTURE, color: fx.color.clone().lerp(fx.white, 0.35),
+    })));
+    corona.scale.setScalar(fx.r * scale);
+    corona.raycast = noRaycast;
+    corona.userData = { base, strong };  // 满级时日冕脉动更明显
+    fx.group.add(corona);
+    return corona;
+  });
+}
+
+// ☀️ 恒星之路：伴星群 → 光冕呼吸 → 日珥 → 日冕 → 双臂星系盘 → 三臂星系盘
+function starPathFx(fx) {
+  const { r, color, white, level } = fx;
+  for (let i = 0; i < 4; i++) {                                                     // Lv3 伴星群
+    fx.sats.push(fx.orbiter(color.clone().lerp(white, 0.7), r * 0.09, r * (1.3 + i * 0.12), 1.2 + i * 0.3));
+  }
+  if (level >= 4) {                                                                 // Lv4 光冕呼吸
+    fx.addAura(SOFT_HALO_TEXTURE, color.clone().lerp(white, 0.25), 4.2, 0.28, { pulse: true, breathe: true });
+  }
+  if (level >= 5) {                                                                 // Lv5 日珥
+    const tint = new THREE.Color("#ff8a3d").lerp(color, 0.1);  // 日珥是暖橙色的，只带一点本色
+    for (let i = 0; i < 3; i++) fx.addProminence(tint);
+  }
+  return {
+    coronas: level >= 6 ? makeCoronas(fx, level >= 8) : [],                        // Lv6 日冕
+    galaxy: level >= 7 ? galaxyDisc(r, color, level >= 8 ? 3 : 2) : null,           // Lv7 双臂 / Lv8 三臂星系盘
+  };
+}
+
+// 🪐 行星之路：卫星群 → 星环 → 双环 → 环 + 卫星带 → 环带星系 → 王冠环系
+function planetPathFx(fx) {
+  const { r, color, white, level, group, updaters } = fx;
+  const grey = new THREE.Color("#8d94a8");
+  for (let i = 0; i < 5; i++) {                                                     // Lv3 卫星群：比伴星大，颜色深浅不一
+    const tint = color.clone().lerp(i % 2 ? white : grey, 0.45);
+    fx.sats.push(fx.orbiter(tint, r * (0.11 + (i % 3) * 0.03), r * (1.7 + i * 0.28), 0.35 + Math.random() * 0.4));
+  }
+  if (level >= 4) fx.addBelts(fx.TILT_A, 1, [0.55, 0.25]);                         // Lv4 星环
+  if (level >= 5) fx.addBelts(fx.TILT_B, 1.18, [0.4, 0.2]);                        // Lv5 第二道星环
+  if (level >= 6) {                                                                 // Lv6 卫星带：主环外一圈碎石般的小卫星
+    const count = 260;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const radius = r * (2.1 + Math.random() * 0.35);
+      positions.set([Math.cos(a) * radius, Math.sin(a) * radius, (Math.random() - 0.5) * r * 0.08], i * 3);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const belt = new THREE.Points(geometry, new THREE.PointsMaterial(additive({
+      size: r * 0.14, map: GLOW_TEXTURE, color: new THREE.Color("#ffe2a0").lerp(color, 0.3),
+    })));
+    belt.raycast = noRaycast;
+    const tilt = new THREE.Object3D();
+    tilt.rotation.set(...fx.TILT_A);  // 和主环在同一个平面上
+    tilt.add(belt);
+    group.add(tilt);
+    updaters.push((dt, t, fade) => {
+      belt.rotation.z += dt * 0.12;
+      belt.material.opacity = 0.75 * fade;
+    });
+  }
+  if (level >= 8) {                                                                 // Lv8 王冠环系：三道不同倾角的彩色细环，缓慢进动
+    ["#7fe8ff", "#ff9ee0", "#ffe08a"].forEach((hex, i) => {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(r * (2.6 + i * 0.28), r * (2.66 + i * 0.28), 96),
+        new THREE.MeshBasicMaterial(additive({ color: hex, side: THREE.DoubleSide })),
+      );
+      ring.raycast = noRaycast;
+      ring.rotation.set(Math.PI / 2 + (i - 1) * 0.7, 0, i * 0.5);
+      const pivot = new THREE.Object3D();
+      pivot.add(ring);
+      group.add(pivot);
+      updaters.push((dt, t, fade) => {
+        pivot.rotation.y += dt * (0.08 + i * 0.04);
+        ring.material.opacity = 0.6 * fade;
+      });
+    });
+  }
+  return { galaxy: level >= 7 ? galaxyDisc(r, color, 2) : null };                  // Lv7 环带星系
+}
+
+// 🌌 星云之路：彩色星云丝 → 星云团 → 脉冲光束 → 极光带 → 星云海 → 超新星遗迹
+function nebulaPathFx(fx) {
+  const { r, color, white, level, group, updaters } = fx;
+  for (let i = 0; i < 3; i++) {                                                     // Lv3 彩色星云丝，各自慢慢转
+    fx.addAura(WISP_TEXTURE, color.clone().offsetHSL((i - 1) * 0.12, 0.1, 0.05), 5 + i, 0.4,
+      { spin: (i % 2 ? -1 : 1) * (0.05 + i * 0.03), rotation: Math.random() * Math.PI * 2 });
+  }
+  const addCloud = (cloud, spin) => {
+    group.add(cloud);
+    updaters.push((dt, t, fade) => {
+      cloud.rotation.y += dt * spin;
+      cloud.material.opacity = cloud.userData.base * fade;
+    });
+  };
+  if (level >= 4) addCloud(nebulaCloud(r, color, 110, 1.3, 3.2, 1, r * 1.1, 0.2), 0.05);  // Lv4 星云团
+  if (level >= 5) {                                                                 // Lv5 脉冲光束：一对光束像灯塔一样扫过
+    const spinner = new THREE.Object3D();
+    const axis = new THREE.Object3D();
+    axis.rotation.z = 0.6;  // 光束和自转轴有夹角，转起来才会“扫”
+    spinner.add(axis);
+    group.add(spinner);
+    const beams = beamPair(axis, r * 5, r * 0.18, color.clone().lerp(white, 0.35));
+    updaters.push((dt, t, fade) => {
+      spinner.rotation.y += dt * 1.4;
+      beams.forEach((b) => { b.material.opacity = (0.16 + 0.06 * Math.sin(t * 9)) * fade; });
+    });
+  }
+  if (level >= 6) {                                                                 // Lv6 极光带：一圈上下起伏的光幕
+    const geometry = new THREE.CylinderGeometry(r * 2, r * 2, r * 0.9, 96, 1, true);
+    const rest = geometry.attributes.position.array.slice();
+    const band = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(additive({
+      map: AURORA_TEXTURE, side: THREE.DoubleSide,
+    })));
+    band.raycast = noRaycast;
+    const tilt = new THREE.Object3D();
+    tilt.rotation.set(0.35, 0, 0.2);
+    tilt.add(band);
+    group.add(tilt);
+    updaters.push((dt, t, fade) => {
+      const pos = geometry.attributes.position.array;
+      for (let i = 0; i < pos.length; i += 3) {
+        const a = Math.atan2(rest[i + 2], rest[i]);
+        pos[i + 1] = rest[i + 1] + Math.sin(a * 3 + t * 1.1) * r * 0.2;  // 绕一圈起伏三次，波浪慢慢往前走
+      }
+      geometry.attributes.position.needsUpdate = true;
+      band.rotation.y += dt * 0.08;
+      band.material.opacity = 0.3 * fade * (0.8 + 0.2 * Math.sin(t * 0.9));
+    });
+  }
+  if (level >= 7) addCloud(nebulaCloud(r, color, 900, 2.4, 7, 0.22, r * 0.5, 0.28), 0.03);  // Lv7 星云海
+  if (level >= 8) {                                                                 // Lv8 超新星遗迹：两层光壳轮流向外膨胀、淡出
+    [0, 0.5].forEach((offset) => {
+      const shellRing = new THREE.Sprite(new THREE.SpriteMaterial(additive({
+        map: SHOCK_TEXTURE, color: color.clone().lerp(white, 0.4),
+      })));
+      shellRing.raycast = noRaycast;
+      group.add(shellRing);
+      updaters.push((dt, t, fade) => {
+        const k = (t / 7 + offset) % 1;
+        shellRing.scale.setScalar(r * (2.5 + k * 7));
+        shellRing.material.opacity = 0.45 * (1 - k) ** 1.5 * fade;
+      });
+    });
+  }
+  return {};
+}
+
+// ⚫ 黑洞之路（稀有）：暗核 → 吸积盘 → 引力透镜光环 → 喷流 → 双喷流 + 炽热吸积盘 → 类星体
+function blackholePathFx(fx) {
+  const { r, white, level, group, updaters } = fx;
+  // Lv3 暗核：内核换成一个大的黑球，外面一圈深紫色的视界光
+  fx.nucleus.geometry.dispose();
+  fx.nucleus.geometry = new THREE.SphereGeometry(r * 0.78, 24, 16);
+  fx.nucleus.material.color.set(0x000000);
+  fx.addAura(SOFT_HALO_TEXTURE, new THREE.Color("#7a5cff"), 3.6, 0.5, { pulse: true });
+
+  // 吸积盘和喷流放在同一个倾斜的平面里：盘在 XY 平面，喷流沿盘的法线（Z 轴）
+  const tilt = new THREE.Object3D();
+  tilt.rotation.set(Math.PI / 2 - 0.3, 0, 0.25);
+  group.add(tilt);
+  const addDisc = (scale, tint, base, speed) => {
+    const disc = new THREE.Mesh(
+      new THREE.RingGeometry(r * 1.2 * scale, r * 3.3 * scale, 96),
+      new THREE.MeshBasicMaterial(additive({ map: DISC_TEXTURE, color: tint, side: THREE.DoubleSide })),
+    );
+    disc.raycast = noRaycast;
+    tilt.add(disc);
+    updaters.push((dt, t, fade) => {
+      disc.rotation.z += dt * speed;
+      disc.material.opacity = base * fade;
+    });
+  };
+  if (level >= 4) addDisc(1, new THREE.Color("#ffd9a8"), 0.85, 0.5);               // Lv4 吸积盘
+  if (level >= 5) fx.addAura(SHOCK_TEXTURE, new THREE.Color("#ffcf8a"), 2.5, 0.6); // Lv5 引力透镜光环（永远正对镜头）
+  if (level >= 6) {                                                                 // Lv6 喷流（Lv7 更长更亮）
+    const jetAxis = new THREE.Object3D();
+    jetAxis.rotation.x = Math.PI / 2;  // 光束默认沿 Y 轴，转到盘的法线方向
+    tilt.add(jetAxis);
+    const strong = level >= 7;
+    const jets = beamPair(jetAxis, r * (strong ? 8 : 5.5), r * 0.22, new THREE.Color("#9fc4ff").lerp(white, 0.3));
+    updaters.push((dt, t, fade) => {
+      const flicker = 0.85 + 0.15 * Math.sin(t * 13) * Math.sin(t * 7.3);
+      jets.forEach((j) => { j.material.opacity = (strong ? 0.7 : 0.4) * flicker * fade; });
+    });
+  }
+  if (level >= 7) addDisc(1.12, white, 0.45, 0.9);                                 // Lv7 炽热吸积盘：再叠一层更白、转得更快的
+  if (level >= 8) fx.addAura(GLOW_TEXTURE, new THREE.Color("#dfe8ff"), 13, 0.3, { pulse: true });  // Lv8 类星体强光
+  return { dark: true };
+}
+
+const KIND_PATH_FX = { star: starPathFx, planet: planetPathFx, nebula: nebulaPathFx, blackhole: blackholePathFx };
+
 function makeNodeObject(node) {
   const r = node.type === "me" ? 4.5 : node.size * 0.5;
   const color = node.type === "me" ? new THREE.Color("#e8ecff") : tone(node.color);
@@ -259,21 +586,40 @@ function makeNodeObject(node) {
   //   分支：卫星（Lv3+）、柔光晕（Lv4+）、十字星芒（Lv5，偶尔一闪）
   //   核心技能（被 4 条以上经历用到）：缓慢旋转的晶体外壳
   //   星环只留给大类，分支和技能都不用环，免得看起来都一样
-  //   大类 8 级，每升一级多一样：星雾 → 变大变亮 → 伴星 → 星环 → 第二道星环 → 日冕 → 双臂星系盘 → 三臂星系盘 + 金色光晕
+  //   大类 8 级，每升一级多一样。Lv1 星雾、Lv2 变大变亮所有大类一样；Lv3 起按进化路线（node.path）各走各的，
+  //   见上面的 starPathFx / planetPathFx / nebulaPathFx / blackholePathFx；满级都有金色光晕
   const white = new THREE.Color(1, 1, 1);
   const kindLv = node.type === "kind" ? node.growth : 0;
 
-  // 叠加发光贴图（星雾、金色光晕），base 是基础亮度，pulse 表示会缓慢明暗脉动
+  // 叠加发光贴图（星雾、光晕……），base 是基础亮度。选项：pulse 缓慢明暗脉动，breathe 大小也一胀一缩，
+  // spin 每秒转多少弧度，rotation 初始角度
   const auras = [];
-  const addAura = (map, tint, scale, base, pulse = false) => {
+  const addAura = (map, tint, scale, base, { pulse = false, breathe = false, spin = 0, rotation = 0 } = {}) => {
     const aura = new THREE.Sprite(new THREE.SpriteMaterial({
-      map, color: tint, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      map, color: tint, rotation, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     }));
     aura.scale.setScalar(r * scale);
     aura.raycast = noRaycast;
-    aura.userData = { base, pulse };
+    aura.userData = { base, pulse, breathe, spin, size: r * scale };
     group.add(aura);
     auras.push(aura);
+  };
+
+  // 日珥：从球面跃出的拱形光弧，此起彼伏地伸缩（恒星之路 Lv5）
+  const prominences = [];
+  const addProminence = (tint) => {
+    const pivot = new THREE.Object3D();  // 负责朝向：光弧从球面上随机一点跃出
+    pivot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().randomDirection());
+    const arc = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 0.45, r * 0.07, 8, 32, Math.PI),  // 半个圆环 = 一道拱
+      new THREE.MeshBasicMaterial({ color: tint, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    arc.position.y = r * 0.85;  // 两脚扎在球面附近
+    arc.rotation.y = Math.random() * Math.PI;
+    arc.raycast = noRaycast;
+    pivot.add(arc);
+    group.add(pivot);
+    prominences.push({ arc, phase: Math.random() * Math.PI * 2 });
   };
 
   // 绕行的小球：分支的卫星、大类的伴星。各自在随机倾斜的轨道上转
@@ -316,7 +662,7 @@ function makeNodeObject(node) {
   ));
   const gold = new THREE.Color("#ffd27a");
   const entryLv = node.type === "entry" ? node.growth : 0;
-  if (entryLv >= 4) addAura(SOFT_HALO_TEXTURE, gold.clone().lerp(white, 0.25), 4.4, entryLv >= 5 ? 0.7 : 0.55, true);  // Lv4 柔光晕
+  if (entryLv >= 4) addAura(SOFT_HALO_TEXTURE, gold.clone().lerp(white, 0.25), 4.4, entryLv >= 5 ? 0.7 : 0.55, { pulse: true });  // Lv4 柔光晕
 
   // Lv5 十字星芒：平时淡淡的，每隔几秒“叮”地亮一下（相位随机，免得所有星芒一起闪）
   let sparkle = null;
@@ -345,33 +691,30 @@ function makeNodeObject(node) {
     group.add(crystal);
   }
 
-  // 大类逐级叠加
+  // 大类逐级叠加：Lv1 星雾、Lv2 变大变亮（内核，见上）所有大类一样；Lv3 起交给进化路线
   if (kindLv >= 1) addAura(GLOW_TEXTURE, color, 7, 0.12);                          // Lv1 星雾
-  if (kindLv >= 3) {                                                                // Lv3 伴星
-    for (let i = 0; i < 3; i++) sats.push(orbiter(color.clone().lerp(white, 0.7), r * 0.09, r * (1.3 + i * 0.12), 1.2 + i * 0.3));
+  const updaters = [];  // 各路线特效的逐帧动画
+  let coronas = [];
+  let galaxy = null;
+  let dark = false;
+  if (kindLv >= 3) {
+    const fx = {
+      group, r, color, white, level: kindLv, shell, nucleus, sats, updaters, TILT_A, TILT_B,
+      addAura, orbiter, addBelts, addProminence,
+    };
+    ({ coronas = [], galaxy = null, dark = false } = (KIND_PATH_FX[node.path] ?? starPathFx)(fx));
   }
-  if (kindLv >= 4) addBelts(TILT_A, 1, [0.55, 0.25]);                               // Lv4 星环
-  if (kindLv >= 5) addBelts(TILT_B, 1.18, [0.4, 0.2]);                              // Lv5 第二道星环
-  const coronas = kindLv >= 6 ? [[7, 0.45], [5, 0.3]].map(([scale, base]) => {      // Lv6 日冕
-    const corona = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: CORONA_TEXTURE, color: color.clone().lerp(white, 0.35), transparent: true, depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }));
-    corona.scale.setScalar(r * scale);
-    corona.raycast = noRaycast;
-    corona.userData = { base, strong: kindLv >= 8 };  // 满级时日冕脉动更明显
-    group.add(corona);
-    return corona;
-  }) : [];
-  const galaxy = kindLv >= 7 ? galaxyDisc(r, color, kindLv >= 8 ? 3 : 2) : null;  // Lv7 双臂 / Lv8 三臂星系盘
   if (galaxy) group.add(galaxy.tilt);
-  if (kindLv >= 8) addAura(GLOW_TEXTURE, new THREE.Color("#ffcf6b"), 11, 0.22, true);  // Lv8 金色光晕
+  if (kindLv >= 8) addAura(GLOW_TEXTURE, new THREE.Color("#ffcf6b"), 11, 0.22, { pulse: true });  // Lv8 金色光晕
 
   // 动画状态：fade 明暗（1 = 正常，接近 0 = 被淡化），boost 悬停加亮，pulse 放电闪光
   node.__parts = {
-    group, shell, nucleus, halo, ring, label, sats, belts, coronas, galaxy, auras, sparkle, crystal,
+    group, shell, nucleus, halo, ring, label, sats, belts, coronas, galaxy, auras, sparkle, crystal, prominences,
+    updaters,
     baseOpacity: dim ? 0.55 : 1,
-    baseHalo: (node.type === "me" ? 0.35 : dim ? 0.12 : 0.22) * (kindLv >= 6 ? 1.6 : kindLv >= 2 ? 1.3 : 1),
+    // 光晕亮度：大类越高越亮；黑洞的光晕压暗，衬出黑色的核
+    baseHalo: (node.type === "me" ? 0.35 : dim ? 0.12 : 0.22)
+      * (dark ? 0.35 : coronas.length ? 1.6 : kindLv >= 2 ? 1.3 : 1),
     fade: 1, targetFade: 1, boost: 0, targetBoost: 0, pulse: 0, labelOpacity: 1,
   };
   return group;
@@ -390,10 +733,11 @@ function growthBlock(node) {
   const next = node.nextSteps.length
     ? `<div class="tip-next">升级：${node.nextSteps.map(esc).join("；")}</div>`
     : `<div class="tip-next max">已达最高等级 ✦</div>`;
+  const path = node.pathName ? `<div class="tip-path">${node.pathIcon} ${esc(node.pathName)}</div>` : "";
   return `<div class="tip-growth">
       <span class="lv">Lv.${node.growth}</span><span class="lv-name">${esc(node.growthName)}</span>
       <span class="lv-bar"><i style="width:${Math.round(node.progress * 100)}%"></i></span>
-    </div>${next}`;
+    </div>${path}${next}`;
 }
 
 function tooltip(node) {
@@ -890,21 +1234,39 @@ function readAndSave(key, value) {
   }
 }
 
+// 已经有大类走上的进化路线
+const FORK_LEVEL = 3;
+const foundPaths = () => [...new Set(graphData.nodes.filter((n) => n.type === "kind" && n.path).map((n) => n.path))];
+const pathInfo = (key) => (levelTables.paths ?? []).find((p) => p.key === key);
+
 function findCelebrations(nodes) {
   const tracked = nodes.filter((n) => n.type === "entry" || n.type === "kind");
   const savedLevels = readAndSave(LEVELS_KEY, Object.fromEntries(tracked.map((n) => [n.id, n.growth])));
-  const lit = { kind: maxLevel("kind"), entry: maxLevel("entry") };
+  const lit = { kind: maxLevel("kind"), entry: maxLevel("entry"), paths: foundPaths() };
   const savedLit = readAndSave(LIT_KEY, lit);
-  if (!savedLevels || !savedLit) return { ups: [], newlyLit: [] };
+  if (!savedLevels || !savedLit) return { ups: [], newlyLit: [], newPaths: [] };
 
+  tracked.forEach((n) => { n.__from = savedLevels[n.id] ?? Math.min(n.growth, 2); });  // 上次看到时的等级
   const ups = tracked
-    .filter((n) => n.growth > (savedLevels[n.id] ?? Math.min(n.growth, 2)))
+    .filter((n) => n.growth > n.__from)
     .sort((a, b) => (b.type === "kind") - (a.type === "kind") || b.growth - a.growth)  // 大类优先
     .slice(0, 3);  // 一次最多庆祝 3 个，免得太长
   const newlyLit = ["kind", "entry"]
     .filter((type) => lit[type] > (savedLit[type] ?? 0))
     .map((type) => ({ type, level: lit[type], name: levelTables[type][lit[type] - 1].name }));
-  return { ups, newlyLit };
+  // 新发现的路线（旧记录里没有 paths，说明是刚加进化分支后第一次打开，现有的路线都算新发现）
+  const newPaths = lit.paths.filter((p) => !(savedLit.paths ?? []).includes(p));
+  return { ups, newlyLit, newPaths };
+}
+
+// 大类刚升过 Lv3、走上了进化路线
+const isFork = (node) => node.type === "kind" && node.path && node.__from < FORK_LEVEL;
+
+function forkToast(node) {
+  const p = pathInfo(node.path);
+  return node.path === "blackhole"
+    ? `<b>✦ 稀有进化！</b>「${esc(node.label)}」坠入了 <b>${p.icon} ${esc(p.name)}</b>`
+    : `<b>✦ 进化分支</b>「${esc(node.label)}」踏上了 <b>${p.icon} ${esc(p.name)}</b>`;
 }
 
 function burst(node) {
@@ -969,7 +1331,7 @@ function showToast(html) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function celebrate({ ups, newlyLit }) {
+async function celebrate({ ups, newlyLit, newPaths }) {
   state.celebrating = true;
   stopRotate();
   for (const node of ups) {
@@ -977,8 +1339,27 @@ async function celebrate({ ups, newlyLit }) {
     focusNode(node);
     await sleep(1300);
     burst(node);
-    const who = node.type === "kind" ? `「${esc(node.label)}」大类` : `「${esc(node.label)}」`;
-    showToast(`<b>✦ 升级</b>${who}升到 <b>Lv.${node.growth} · ${esc(node.growthName)}</b>`);
+    if (isFork(node)) {
+      showToast(forkToast(node));
+      if (node.path === "blackhole") {  // 稀有路线：多炸一次，多停一会儿
+        await sleep(700);
+        burst(node);
+      }
+    } else {
+      const who = node.type === "kind" ? `「${esc(node.label)}」大类` : `「${esc(node.label)}」`;
+      showToast(`<b>✦ 升级</b>${who}升到 <b>Lv.${node.growth} · ${esc(node.growthName)}</b>`);
+    }
+    await sleep(2800);
+  }
+  // 新发现的路线：图鉴里对应的图标闪几下；上面已经播过分叉庆祝的，就不再弹提示
+  const announced = new Set(ups.filter(isFork).map((n) => n.path));
+  for (const key of newPaths) {
+    document.getElementById("achv").classList.remove("collapsed");
+    document.querySelector(`.path-chip[data-path="${key}"]`)?.classList.add("flash");
+    if (announced.has(key)) continue;
+    const p = pathInfo(key);
+    const kinds = graphData.nodes.filter((n) => n.type === "kind" && n.path === key).map((n) => `「${esc(n.label)}」`);
+    showToast(`<b>✦ 发现新路线</b>${p.icon} <b>${esc(p.name)}</b>：${kinds.join("")}`);
     await sleep(2800);
   }
   // 首次点亮：点亮面板里对应的那一行闪几下
@@ -997,7 +1378,7 @@ async function celebrate({ ups, newlyLit }) {
 // 某个等级只要有节点达到过（当前等级 ≥ 它）就算“点亮”，像收集图鉴。点击已点亮的等级：
 // 只有一个节点就直接飞过去；多个就一起点亮、镜头框住它们，再点一次就在它们之间依次切换。
 
-let levelTables = { entry: [], kind: [] };
+let levelTables = { entry: [], kind: [], paths: [] };
 const ACHV_GROUPS = [
   { type: "kind", title: "大类", badge: "◆" },
   { type: "entry", title: "经历", badge: "●" },
@@ -1047,6 +1428,17 @@ function renderAchievements() {
     }
     html += "</div>";
   }
+  // 进化路线图鉴：发现了的显示图标和名字，点击飞到走这条路的大类；没发现的是问号
+  const paths = levelTables.paths ?? [];
+  if (paths.length) {
+    const found = new Set(foundPaths());
+    html += `<div class="achv-group"><div class="achv-title"><b>进化路线</b>
+      <span class="achv-count">已发现 ${found.size} / ${paths.length}</span></div><div class="path-chips">`;
+    html += paths.map((p) => (found.has(p.key)
+      ? `<button type="button" class="path-chip" data-path="${p.key}" title="${esc(p.name)}：点击飞过去">${p.icon}<span>${esc(p.name)}</span></button>`
+      : `<span class="path-chip unknown" title="还没有大类走上这条路">？</span>`)).join("");
+    html += "</div></div>";
+  }
   for (const n of closestToUpgrade()) {
     html += `<button type="button" class="achv-next" data-id="${esc(n.id)}">🎯 离升级最近：${esc(n.label)}（Lv.${n.growth} → ${n.growth + 1}）
       <small>${esc(n.nextSteps[0].split("（")[0])}</small></button>`;
@@ -1055,6 +1447,9 @@ function renderAchievements() {
   document.getElementById("achv-sum").textContent = `已点亮 ${lit} / ${total}`;
   body.querySelectorAll(".achv-row.lit").forEach((row) =>
     row.addEventListener("click", () => jumpToLevel(row.dataset.type, Number(row.dataset.level))));
+  body.querySelectorAll(".path-chip[data-path]").forEach((chip) =>
+    chip.addEventListener("click", () => jumpToGroup(`path:${chip.dataset.path}`,
+      graphData.nodes.filter((n) => n.type === "kind" && isVisible(n) && n.path === chip.dataset.path))));
   body.querySelectorAll(".achv-next").forEach((btn) =>
     btn.addEventListener("click", () => selectNode(nodeById.get(btn.dataset.id))));
   markCurrentRow(levelCycle.key);
@@ -1066,9 +1461,12 @@ function markCurrentRow(key) {
 }
 
 function jumpToLevel(type, level) {
-  const nodes = nodesAtLeast(type, level);
+  jumpToGroup(`${type}:${level}`, nodesAtLeast(type, level));
+}
+
+// 一组节点：只有一个就直接飞过去；多个先一起框住，再点就在它们之间依次切换。key 用来认出“同一组”
+function jumpToGroup(key, nodes) {
   if (!nodes.length) return;
-  const key = `${type}:${level}`;
   if (nodes.length === 1 || levelCycle.key === key) {
     // 只有一个，或者已经框住过这一组：逐个飞过去
     levelCycle.index = levelCycle.key === key ? (levelCycle.index + 1) % nodes.length : 0;
@@ -1187,6 +1585,14 @@ function animate(now) {
     });
     for (const a of p.auras) {
       a.material.opacity = a.userData.base * fade * (a.userData.pulse ? 1 + 0.4 * Math.sin(now / 1000 * 1.1) : 1);
+      if (a.userData.breathe) a.scale.setScalar(a.userData.size * (1 + 0.09 * Math.sin(now / 1000 * 1.1)));
+      if (a.userData.spin) a.material.rotation += dt * a.userData.spin;
+    }
+    for (const update of p.updaters) update(dt, now / 1000, fade);
+    for (const pr of p.prominences) {
+      const w = 0.5 + 0.5 * Math.sin(now / 1000 * 0.7 + pr.phase);
+      pr.arc.scale.set(1, 0.55 + 0.75 * w, 1);  // 光弧一会儿高高跃起，一会儿落回球面
+      pr.arc.material.opacity = (0.3 + 0.45 * w) * fade;
     }
     if (p.galaxy) {
       p.galaxy.disc.rotation.y += dt * 0.12;
@@ -1362,7 +1768,7 @@ fetch("/api/graph").then((r) => r.json()).then((data) => {
 
   // 入场动画结束后，播放升级庆祝
   const celebrations = findCelebrations(data.nodes);
-  if (celebrations.ups.length || celebrations.newlyLit.length) {
+  if (celebrations.ups.length || celebrations.newlyLit.length || celebrations.newPaths.length) {
     setTimeout(() => celebrate(celebrations), INTRO_STEP * 4 + 900);
   }
 });
