@@ -36,6 +36,13 @@
   </div>
 
   <div class="hud top-right">
+    <label class="toggle" title="简洁：平时只显示主干，悬停或选中某个球时才显示它的技能、机构和关联连线">连线
+      <select id="linkmode">
+        <option value="simple">简洁</option>
+        <option value="all">全部</option>
+        <option value="noRelation">全部（不含关联）</option>
+      </select>
+    </label>
     <label class="toggle"><input type="checkbox" id="layered"> 时间分层</label>
     <label class="toggle"><input type="checkbox" id="lowfx"> 低特效</label>
     <button type="button" id="reset">重置视角</button>

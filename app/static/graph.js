@@ -15,6 +15,7 @@ const state = {
   celebrating: false,  // 正在播放升级庆祝
   group: null,         // 点亮面板里点了某个等级后，一起高亮的那组节点
   achvCollapsed: false,
+  linkMode: "simple",  // 连线开关，见 linkModeAllows()
   userMoved: false,  // 用户动过镜头或拖过小球后，就不再自动调整镜头
 };
 const highlightNodes = new Set();
@@ -384,7 +385,9 @@ function setHighlight(node) {
 }
 
 function refreshLinks() {
-  Graph.linkColor(Graph.linkColor())
+  // “简洁”档下悬停会改变哪些连线可见，所以显隐也要一起刷新
+  Graph.linkVisibility(Graph.linkVisibility())
+    .linkColor(Graph.linkColor())
     .linkWidth(Graph.linkWidth())
     .linkDirectionalParticles(Graph.linkDirectionalParticles());
 }
@@ -419,7 +422,7 @@ function fire() {
   const entry = entries[Math.floor(Math.random() * entries.length)];
   const kindNode = nodeById.get(`kind:${entry.kind}`);
   const path = [linkBetween(nodeById.get("me"), kindNode), linkBetween(kindNode, entry)];
-  const outward = entry.links.filter((l) => l.source === entry && isVisible(l.target));
+  const outward = entry.links.filter((l) => l.source === entry && linkShown(l));  // 只沿看得见的连线走
   if (outward.length) path.push(outward[Math.floor(Math.random() * outward.length)]);
 
   path.forEach((link, i) => {
@@ -694,10 +697,26 @@ function isVisible(node) {
   return node.neighbors.some((n) => n.type === "entry" && !state.hiddenKinds.has(n.kind));
 }
 
-function applyVisibility() {
+// 连线开关三档（技能、机构、关联的线叠在一起像蜘蛛网，所以默认收起来）：
+//   simple     简洁：只常驻主干（我 → 类型 → 经历），其余连线在悬停或选中某个球时才出现
+//   all        全部
+//   noRelation 全部（不含关联）：条目之间的关联线平时不显示
+// 任何一档下，悬停或选中的球自己的连线都会显示。
+const LINK_MODES = ["simple", "all", "noRelation"];
+
+function linkModeAllows(l) {
+  if (l.type === "tree" || highlightLinks.has(l) || state.linkMode === "all") return true;
+  return state.linkMode === "noRelation" && l.type !== "relation";
+}
+
+function linkShown(l) {
   // 入场动画期间，两端都“长出来”之后连线才接通
-  Graph.nodeVisibility(isVisible).linkVisibility((l) =>
-    isVisible(l.source) && isVisible(l.target) && l.source.__revealed && l.target.__revealed);
+  return isVisible(l.source) && isVisible(l.target) && l.source.__revealed && l.target.__revealed
+    && linkModeAllows(l);
+}
+
+function applyVisibility() {
+  Graph.nodeVisibility(isVisible).linkVisibility(linkShown);
   renderAchievements();  // 图例隐藏了某个类型，点亮进度也跟着变
 }
 
@@ -780,7 +799,7 @@ function playIntro(nodes) {
       applyVisibility();
       if (d > 0 && !state.lowFx) {
         level.forEach((n) => n.links
-          .filter((l) => l.target === n && l.source.__revealed)
+          .filter((l) => l.target === n && linkShown(l))
           .forEach((l) => Graph.emitParticle(l)));
       }
     }, d * INTRO_STEP);
@@ -1039,7 +1058,7 @@ function fitNodes(nodes) {
 }
 
 // ---------------------------------------------------------------- 记住开关
-// “时间分层”“低特效”存在浏览器里，下次打开星图自动恢复。读写失败（比如隐私模式）就当没存过。
+// “连线”“时间分层”“低特效”存在浏览器里，下次打开星图自动恢复。读写失败（比如隐私模式）就当没存过。
 
 const PREFS_KEY = "imap.graph.prefs";
 
@@ -1055,6 +1074,7 @@ function savePrefs() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       layered: state.layered, lowFx: state.lowFx, achvCollapsed: state.achvCollapsed,
+      linkMode: state.linkMode,
     }));
   } catch {
     // 存不了就算了，不影响使用
@@ -1324,6 +1344,15 @@ if (prefs.lowFx) {
   document.getElementById("lowfx").checked = true;
   setLowFx(true);
 }
+
+const linkModeSelect = document.getElementById("linkmode");
+if (LINK_MODES.includes(prefs.linkMode)) state.linkMode = prefs.linkMode;
+linkModeSelect.value = state.linkMode;
+linkModeSelect.addEventListener("change", (e) => {
+  state.linkMode = e.target.value;
+  refreshLinks();
+  savePrefs();
+});
 
 document.getElementById("reset").addEventListener("click", () => {
   clearSelection();
