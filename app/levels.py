@@ -20,7 +20,7 @@
 
 进化分支：Lv1 星云、Lv2 原恒星所有大类一样；升到 Lv3 时分叉，选定一条进化路线（EVOLUTION_PATHS），
 Lv3~Lv8 的名字和外观按路线走。路线第一次升到 Lv3 时掷骰子决定（roll_path），存进数据库后不再改变：
-先以 BLACK_HOLE_CHANCE 的概率抽中稀有的黑洞之路，否则按这个大类的数据偏向（path_weights）在三条常规路线里随机。
+先抽稀有的黑洞之路（概率见 black_hole_chance，带保底），没中就按这个大类的数据偏向（path_weights）在三条常规路线里随机。
 """
 import math
 import random
@@ -55,7 +55,11 @@ EVOLUTION_PATHS: dict[str, EvolutionPath] = {
     "nebula": EvolutionPath("星云之路", "🌌", ("星云丝", "星云团", "脉冲星云", "极光星云", "星云海", "超新星遗迹")),
     "blackhole": EvolutionPath("黑洞之路", "⚫", ("暗核", "吸积黑洞", "透镜黑洞", "喷流黑洞", "双喷流黑洞", "类星体")),
 }
-BLACK_HOLE_CHANCE = 0.08  # 稀有路线，和数据无关
+# 黑洞是稀有路线，和数据无关。保底：还没出过黑洞时，每次分叉没抽中，下一次概率 +BLACK_HOLE_STEP，
+# 第 BLACK_HOLE_PITY 次分叉必出（15% → 25% → 35% → 45% → 必出）。保底只保第一个，出过之后一直是基础概率
+BLACK_HOLE_CHANCE = 0.15
+BLACK_HOLE_STEP = 0.10
+BLACK_HOLE_PITY = 5
 
 # 每个大类大约需要几条写满（Lv5）的经历才算满级
 KIND_TARGETS = {
@@ -158,10 +162,20 @@ def path_weights(entries: list[Entry], relation_count: int) -> dict[str, int]:
     }
 
 
-def roll_path(weights: dict[str, int], rng: random.Random | None = None) -> str:
-    """掷骰子选进化路线。rng 可以传进来，测试时用固定的随机数。"""
+def black_hole_chance(misses: int, found: bool) -> float:
+    """下一次分叉抽中黑洞的概率。found：已经出过黑洞；misses：还没出过黑洞时，已经分叉了几次。"""
+    if found:
+        return BLACK_HOLE_CHANCE
+    if misses + 1 >= BLACK_HOLE_PITY:
+        return 1.0
+    return BLACK_HOLE_CHANCE + BLACK_HOLE_STEP * misses
+
+
+def roll_path(weights: dict[str, int], rng: random.Random | None = None,
+              chance: float = BLACK_HOLE_CHANCE) -> str:
+    """掷骰子选进化路线：先按 chance 抽黑洞，没中再按权重抽。rng 可以传进来，测试时用固定的随机数。"""
     rng = rng or random
-    if rng.random() < BLACK_HOLE_CHANCE:
+    if rng.random() < chance:
         return "blackhole"
     return rng.choices(list(weights), weights=list(weights.values()))[0]
 

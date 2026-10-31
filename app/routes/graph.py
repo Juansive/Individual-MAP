@@ -11,8 +11,8 @@ from sqlmodel import Session, select
 
 from app.completeness import check_entry
 from app.db import get_session
-from app.levels import (EVOLUTION_PATHS, FORK_LEVEL, STAR_SKILL_MIN, entry_growth, kind_growth, level_tables,
-                        path_weights, roll_path, satellites)
+from app.levels import (BLACK_HOLE_PITY, EVOLUTION_PATHS, FORK_LEVEL, STAR_SKILL_MIN, black_hole_chance,
+                        entry_growth, kind_growth, level_tables, path_weights, roll_path, satellites)
 from app.models import (ENTRY_KINDS, RELATIONS, SKILL_CATEGORIES, Entry, EntryLink, KindEvolution,
                         skill_category)
 from app.web import templates
@@ -38,6 +38,8 @@ def ensure_paths(session: Session, entries: list[Entry], entry_links: list[Entry
     """返回每个大类的进化路线。大类第一次升到 Lv3 时掷骰子选一条并存下来，之后不再改变。"""
     paths = {row.kind: row.path for row in session.exec(select(KindEvolution)).all()}
     added = False
+    found = "blackhole" in paths.values()  # 黑洞保底：出过之后就不再累加
+    misses = 0 if found else len(paths)
     for key in ENTRY_KINDS:
         group = [e for e in entries if e.kind == key]
         if key in paths or not group:
@@ -46,7 +48,9 @@ def ensure_paths(session: Session, entries: list[Entry], entry_links: list[Entry
             continue
         ids = {e.id for e in group}
         relations = sum(1 for link in entry_links if link.from_id in ids or link.to_id in ids)
-        paths[key] = roll_path(path_weights(group, relations), rng)
+        paths[key] = roll_path(path_weights(group, relations), rng, black_hole_chance(misses, found))
+        found = found or paths[key] == "blackhole"
+        misses = 0 if found else misses + 1
         session.add(KindEvolution(kind=key, path=paths[key]))
         added = True
     if added:
@@ -137,7 +141,13 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink], paths: dict[
             links.append({"source": f"entry:{link.from_id}", "target": f"entry:{link.to_id}",
                           "type": "relation", "outLabel": out_label, "inLabel": in_label})
 
-    return {"nodes": nodes, "links": links, "levels": level_tables()}
+    # 黑洞保底进度（点亮面板的路线图鉴里显示）：下次分叉的概率，还差几次分叉必出
+    found = "blackhole" in paths.values()
+    misses = 0 if found else len(paths)
+    evolution = {"blackHoleFound": found, "blackHoleChance": black_hole_chance(misses, found),
+                 # 旧规则下可能已经分叉超过保底次数还没出黑洞，这时就是“下次必出”
+                 "pityLeft": 0 if found else max(1, BLACK_HOLE_PITY - misses)}
+    return {"nodes": nodes, "links": links, "levels": level_tables(), "evolution": evolution}
 
 
 @router.get("/graph")
