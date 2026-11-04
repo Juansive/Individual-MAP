@@ -6,8 +6,8 @@ SQLModel 的 create_all 只会创建不存在的表，不会给已有的表加�
 
 写升级函数的约定：
 - 只能往末尾追加，不要改动或删除已有的函数（用户的数据库可能已经执行过它们）
-- 必须可以重复执行：新建的数据库也会把全部升级跑一遍，而 create_all 已经建好了最新的表结构，
-  所以要用 add_column 这类“先检查再修改”的工具函数
+- 必须可以重复执行，用 add_column 这类“先检查再修改”的工具函数（新建的数据库会直接记为最新版本，
+  见 mark_up_to_date，但万一某次升级中途出错重来，也不能出问题）
 - 升级前会自动做一份数据库快照；每个升级函数在一个事务里执行，出错会回滚
 
 示例：
@@ -35,12 +35,27 @@ def add_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> N
         conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {ddl}')
 
 
-# 按顺序排列的升级函数。目前还没有需要升级的地方。
-MIGRATIONS: list[Migration] = []
+def add_entry_featured(conn: sqlite3.Connection) -> None:
+    """条目加“代表作”标记和它的星图特效（2026-11）。"""
+    add_column(conn, "entry", "featured", "BOOLEAN NOT NULL DEFAULT 0")
+    add_column(conn, "entry", "featured_style", "VARCHAR NOT NULL DEFAULT ''")
+
+
+# 按顺序排列的升级函数，只能往末尾追加
+MIGRATIONS: list[Migration] = [add_entry_featured]
 
 
 def schema_version(conn: sqlite3.Connection) -> int:
     return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def mark_up_to_date() -> None:
+    """刚用 create_all 新建的数据库已经是最新结构，直接记为最新版本，不用再跑一遍升级。"""
+    conn = sqlite3.connect(DB_PATH, isolation_level=None)
+    try:
+        conn.execute(f"PRAGMA user_version = {len(MIGRATIONS)}")
+    finally:
+        conn.close()
 
 
 def migrate() -> list[str]:

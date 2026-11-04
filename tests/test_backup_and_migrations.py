@@ -48,6 +48,30 @@ def test_migration_adds_column_once_and_backs_up(client, monkeypatch):
     assert any("before-upgrade" in p.name for p in backup.auto_snapshots())
 
 
+def test_real_migrations_upgrade_old_database(client):
+    # 模拟升级前的数据库：条目表还没有代表作字段，版本号是 0
+    with db() as conn:
+        conn.execute('ALTER TABLE entry DROP COLUMN featured')
+        conn.execute('ALTER TABLE entry DROP COLUMN featured_style')
+    reset_version()
+    assert migrations.migrate() == [m.__name__ for m in migrations.MIGRATIONS]
+    with db() as conn:
+        assert migrations.column_exists(conn, "entry", "featured")
+        assert migrations.column_exists(conn, "entry", "featured_style")
+        assert migrations.schema_version(conn) == len(migrations.MIGRATIONS)
+
+
+def test_fresh_database_starts_up_to_date(client):
+    from app.db import engine, init_db
+    engine.dispose()
+    config.DB_PATH.unlink()
+    snapshots = len(backup.auto_snapshots())
+    init_db()                                              # 第一次运行：建表，直接记为最新版本
+    with db() as conn:
+        assert migrations.schema_version(conn) == len(migrations.MIGRATIONS)
+    assert len(backup.auto_snapshots()) == snapshots      # 没有跑升级，也就不用做升级前备份
+
+
 def test_failed_migration_rolls_back(client, monkeypatch):
     def broken(conn):
         migrations.add_column(conn, "skill", "temp", "VARCHAR")

@@ -42,6 +42,21 @@ def kind_of(key: str) -> Kind:
     return ENTRY_KINDS.get(key, ENTRY_KINDS["other"])
 
 
+# 代表作：用户自己标出的“最有含金量”的经历，限量才珍贵。星图里每条代表作有一种专属特效
+FEATURED_MAX = 5
+FEATURED_STYLES: dict[str, str] = {   # key → 名字（星图的 graph.js 里有对应的特效）
+    "crown": "星冠",
+    "spotlight": "聚光灯",
+}
+# 设为代表作时默认用的特效：按类型推荐，没列出的用星冠
+DEFAULT_FEATURED_STYLE = {"project": "spotlight", "internship": "spotlight", "research": "spotlight",
+                          "campus": "spotlight"}
+
+
+def default_featured_style(kind: str) -> str:
+    return DEFAULT_FEATURED_STYLE.get(kind, "crown")
+
+
 @dataclass(frozen=True)
 class SkillCategory:
     label: str
@@ -94,6 +109,8 @@ class Entry(SQLModel, table=True):
     end: str = ""          # 结束时间，空表示单个时间点，"now" 表示至今
     description: str = ""  # 原始描述，随手写的话
     highlights: str = ""   # 成果要点，一行一条
+    featured: bool = False      # 代表作（最多 FEATURED_MAX 条）
+    featured_style: str = ""    # 代表作的星图特效，FEATURED_STYLES 的 key；取消代表作后保留，再设回来还是它
     created_at: NaiveDatetime = Field(default_factory=datetime.now)
     updated_at: NaiveDatetime = Field(default_factory=datetime.now)
 

@@ -9,9 +9,9 @@ from sqlmodel import Session, func, select
 from app import vault
 from app.completeness import check_entry
 from app.db import get_session
-from app.models import ENTRY_KINDS, Attachment, Entry, Skill
+from app.models import ENTRY_KINDS, FEATURED_MAX, Attachment, Entry, Skill, default_featured_style
 from app.routes.links import LINK_CHOICES, delete_links_of, links_of
-from app.web import get_or_404, redirect, save_form_files, sort_entries, templates
+from app.web import back_to, get_or_404, redirect, save_form_files, sort_entries, templates
 
 router = APIRouter()
 
@@ -62,7 +62,8 @@ def apply_form(entry: Entry, form) -> None:
 
 @router.get("/")
 def index(request: Request, q: str = "", kind: str = "", year: str = "", skill: str = "",
-          todo: bool = False, view: str = "timeline", session: Session = Depends(get_session)):
+          todo: bool = False, featured: bool = False, view: str = "timeline",
+          session: Session = Depends(get_session)):
     all_entries = list(session.exec(select(Entry)).all())
 
     # 数据量是几百条级别，直接在 Python 里筛选，简单直观
@@ -77,6 +78,8 @@ def index(request: Request, q: str = "", kind: str = "", year: str = "", skill: 
         shown = [e for e in shown if matches(e, q)]
     if todo:
         shown = [e for e in shown if check_entry(e)]
+    if featured:
+        shown = [e for e in shown if e.featured]
     shown = sort_entries(shown)
 
     groups = [(y, list(items)) for y, items in groupby(shown, key=lambda e: e.start[:4] or "未注明时间")]
@@ -88,11 +91,12 @@ def index(request: Request, q: str = "", kind: str = "", year: str = "", skill: 
         "groups": groups,
         "total": len(all_entries),
         "todo_count": sum(1 for e in all_entries if check_entry(e)),
+        "featured_count": sum(1 for e in all_entries if e.featured),
         "years": sorted({e.start[:4] for e in all_entries if e.start}, reverse=True),
         "skills": skills,
-        "q": q, "kind": kind, "year": year, "skill": skill, "todo": todo,
+        "q": q, "kind": kind, "year": year, "skill": skill, "todo": todo, "featured": featured,
         "view": view if view in ("timeline", "list") else "timeline",
-        "filtering": bool(q or kind or year or skill or todo),
+        "filtering": bool(q or kind or year or skill or todo or featured),
     })
 
 
@@ -174,6 +178,27 @@ async def update(request: Request, entry_id: int, session: Session = Depends(get
     vault.prune_empty_dirs()
     parts = [f"已保存「{entry.title}」"] + ([f"{moved} 个文件已按新信息重新整理"] if moved else []) + ([file_msg] if file_msg else [])
     return redirect("/", "，".join(parts))
+
+
+@router.post("/entries/{entry_id}/feature")
+async def toggle_featured(request: Request, entry_id: int, session: Session = Depends(get_session)):
+    """设为 / 取消代表作。代表作限量 FEATURED_MAX 条，满了要先取消一条。"""
+    form = await request.form()
+    entry = get_or_404(session, Entry, entry_id)
+    here = back_to(form, f"/entries/{entry_id}")
+    if entry.featured:
+        entry.featured = False
+        msg = f"「{entry.title}」不再是代表作"
+    else:
+        count = session.exec(select(func.count()).select_from(Entry).where(Entry.featured == True)).one()  # noqa: E712
+        if count >= FEATURED_MAX:
+            return redirect(here, f"代表作最多 {FEATURED_MAX} 条，先取消一条再设")
+        entry.featured = True
+        # 以前设过就沿用原来的特效，否则按类型推荐一个
+        entry.featured_style = entry.featured_style or default_featured_style(entry.kind)
+        msg = f"「{entry.title}」设为代表作 🏅"
+    session.commit()
+    return redirect(here, msg)
 
 
 @router.post("/entries/{entry_id}/delete")

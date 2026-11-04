@@ -13,8 +13,8 @@ from app.completeness import check_entry
 from app.db import get_session
 from app.levels import (BLACK_HOLE_PITY, EVOLUTION_PATHS, FORK_LEVEL, STAR_SKILL_MIN, black_hole_chance,
                         entry_growth, kind_growth, level_tables, path_weights, roll_path, satellites)
-from app.models import (ENTRY_KINDS, RELATIONS, SKILL_CATEGORIES, Entry, EntryLink, KindEvolution,
-                        skill_category)
+from app.models import (ENTRY_KINDS, FEATURED_STYLES, RELATIONS, SKILL_CATEGORIES, Entry, EntryLink,
+                        KindEvolution, default_featured_style, skill_category)
 from app.web import templates
 
 router = APIRouter()
@@ -86,6 +86,7 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink], paths: dict[
         kind = ENTRY_KINDS.get(e.kind, ENTRY_KINDS["other"])
         issues = check_entry(e)
         growth = growths[e.id]
+        style = (e.featured_style or default_featured_style(e.kind)) if e.featured else ""
         nodes.append({
             "id": f"entry:{e.id}",
             "type": "entry",
@@ -111,9 +112,15 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink], paths: dict[
             "progress": growth.progress,
             "nextSteps": growth.next_steps,
             "satellites": satellites(e) if growth.level >= 3 else [],
+            # 代表作：专属特效（见 graph.js 的 FEATURED_FX），另有常驻名字、连到“我”的金线
+            "featured": e.featured,
+            "featuredStyle": style,
+            "featuredName": FEATURED_STYLES.get(style, ""),
         })
         links.append({"source": f"kind:{e.kind if e.kind in ENTRY_KINDS else 'other'}",
                       "target": f"entry:{e.id}", "type": "tree"})
+        if e.featured:  # 代表作直接连一根金线到“我”（只用于显示，不参与力学，见 graph.js）
+            links.append({"source": "me", "target": f"entry:{e.id}", "type": "featured"})
 
         for s in e.skills:
             skills.setdefault(s.id, {"name": s.name, "category": s.category, "entries": []})["entries"].append(e.id)

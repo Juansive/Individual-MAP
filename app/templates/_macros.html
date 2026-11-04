@@ -9,9 +9,9 @@
 
 {% macro entry_card(e) -%}
   {% set issues = check_entry(e) %}
-  <a class="entry-card" href="/entries/{{ e.id }}" style="--kind: {{ kind_of(e.kind).color }}">
+  <a class="entry-card {{ 'featured' if e.featured }}" href="/entries/{{ e.id }}" style="--kind: {{ kind_of(e.kind).color }}">
     <div class="entry-card-head">
-      {{ kind_chip(e.kind) }}
+      <span>{{ kind_chip(e.kind) }}{% if e.featured %} <span class="featured-badge" title="代表作">🏅 代表作</span>{% endif %}</span>
       <span class="period">{{ e.period_text() }}</span>
     </div>
     <div class="entry-title">{{ e.title }}</div>

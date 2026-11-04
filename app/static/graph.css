@@ -171,6 +171,7 @@ body.immersive .immersive-exit:hover { opacity: 1; }
 .node-label.me { color: #fff; font-size: 15px; font-weight: 600; letter-spacing: 2px; }
 .node-label.kind { font-size: 13px; font-weight: 600; }
 .node-label.org { color: #b6bfd6; }
+.node-label.featured { color: #ffd98a; font-size: 12px; font-weight: 600; }  /* 代表作：常驻的金色名字 */
 .year-label {
   color: rgba(123, 143, 255, .55); font-size: 11px; font-weight: 600; letter-spacing: 1px;
   pointer-events: none; transition: color .2s, font-size .2s;
@@ -210,6 +211,7 @@ body.immersive .immersive-exit:hover { opacity: 1; }
 .lv-bar { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .1); overflow: hidden; }
 .lv-bar i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, #ffd27a, #fff3cf); }
 .tip-path { margin-top: 4px; font-size: 12px; color: #ffd98a; }
+.tip-featured { margin: 2px 0; font-size: 12px; font-weight: 600; color: #ffd98a; }
 .tip-next { margin-top: 4px; font-size: 11px; color: var(--muted); }
 .tip-next.max { color: #ffd98a; }
 

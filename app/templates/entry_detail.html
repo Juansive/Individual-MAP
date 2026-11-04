@@ -14,6 +14,13 @@
       {% endif %}
     </div>
     <div class="head-actions">
+      <form method="post" action="{{ here }}/feature">
+        {% if entry.featured %}
+          <button class="btn featured-on" title="点击取消代表作">🏅 代表作</button>
+        {% else %}
+          <button class="btn" title="最有含金量的经历，最多 {{ FEATURED_MAX }} 条">🏅 设为代表作</button>
+        {% endif %}
+      </form>
       <a class="btn primary" href="{{ here }}/edit">编辑</a>
       <form method="post" action="{{ here }}/delete" data-confirm="删除「{{ entry.title }}」？它的证明文件会放回待归类，不会被删除。">
         <button class="btn ghost danger">删除</button>
