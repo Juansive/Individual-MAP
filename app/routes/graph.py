@@ -115,7 +115,7 @@ def build_graph(entries: list[Entry], entry_links: list[EntryLink], paths: dict[
             # 代表作：专属特效（见 graph.js 的 FEATURED_FX），另有常驻名字、连到“我”的金线
             "featured": e.featured,
             "featuredStyle": style,
-            "featuredName": FEATURED_STYLES.get(style, ""),
+            "featuredName": FEATURED_STYLES[style].name if style in FEATURED_STYLES else "",
         })
         links.append({"source": f"kind:{e.kind if e.kind in ENTRY_KINDS else 'other'}",
                       "target": f"entry:{e.id}", "type": "tree"})

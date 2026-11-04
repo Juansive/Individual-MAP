@@ -56,3 +56,34 @@ def test_graph_marks_featured(client, make_entry):
     assert (nodes[f"entry:{plain}"]["featured"], nodes[f"entry:{plain}"]["featuredStyle"]) == (False, "")
     featured_links = [l for l in graph["links"] if l["type"] == "featured"]
     assert featured_links == [{"source": "me", "target": f"entry:{star}", "type": "featured"}]
+
+
+def test_every_kind_has_a_default_style():
+    from app.models import DEFAULT_FEATURED_STYLE, ENTRY_KINDS, FEATURED_STYLES
+    assert set(DEFAULT_FEATURED_STYLE) == set(ENTRY_KINDS)
+    assert set(DEFAULT_FEATURED_STYLE.values()) == set(FEATURED_STYLES)   # 8 种特效都有类型默认用到
+
+
+def test_switch_featured_style(client, make_entry):
+    edu = make_entry(kind="education", title="本科")
+    client.post(f"/entries/{edu}/feature")
+    assert entry(edu).featured_style == "wings"
+
+    resp = client.post(f"/entries/{edu}/feature-style", data={"style": "heartbeat"})
+    assert "心跳" in resp.text and entry(edu).featured_style == "heartbeat"
+
+    client.post(f"/entries/{edu}/feature-style", data={"style": "不存在"})
+    assert entry(edu).featured_style == "heartbeat"                       # 不认识的特效不改
+
+    for _ in range(5):                                                    # 随机：每次都换成不一样的
+        before = entry(edu).featured_style
+        client.post(f"/entries/{edu}/feature-style", data={"style": "random"})
+        assert entry(edu).featured_style != before
+
+
+def test_detail_page_shows_style_picker_only_for_featured(client, make_entry):
+    eid = make_entry(kind="project", title="小程序")
+    assert "星图特效" not in client.get(f"/entries/{eid}").text
+    client.post(f"/entries/{eid}/feature")
+    page = client.get(f"/entries/{eid}").text
+    assert "星图特效" in page and "光之翼" in page and "static/featured/spotlight.png" in page

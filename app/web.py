@@ -11,7 +11,7 @@ from app import vault
 from app.completeness import check_entry
 from app.config import STATIC_DIR, TEMPLATES_DIR
 from app.db import engine
-from app.models import ENTRY_KINDS, FEATURED_MAX, Attachment, Entry, kind_of
+from app.models import ENTRY_KINDS, FEATURED_MAX, FEATURED_STYLES, Attachment, Entry, default_featured_style, kind_of
 
 
 def inbox_count() -> int:
@@ -41,6 +41,8 @@ templates.env.globals.update(
     static_url=static_url,
     ENTRY_KINDS=ENTRY_KINDS,
     FEATURED_MAX=FEATURED_MAX,
+    FEATURED_STYLES=FEATURED_STYLES,
+    default_featured_style=default_featured_style,
     kind_of=kind_of,
     check_entry=check_entry,
     inbox_count=inbox_count,

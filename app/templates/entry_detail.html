@@ -33,6 +33,29 @@
   <div class="notice">待完善：{{ issue_badges(issues) }} <a href="{{ here }}/edit">去补全 →</a></div>
 {% endif %}
 
+{% if entry.featured %}
+  {# 代表作在星图里的专属特效：点一下就换 #}
+  {% set current_style = entry.featured_style or default_featured_style(entry.kind) %}
+  <section class="card style-picker">
+    <form method="post" action="{{ here }}/feature-style">
+      <div class="style-head">
+        <h2>🏅 星图特效</h2>
+        <span class="muted">代表作在星图里的专属效果，点一下就换</span>
+        <button class="btn small" name="style" value="random">🎲 随机换一个</button>
+      </div>
+      <div class="style-grid">
+        {% for key, s in FEATURED_STYLES.items() %}
+          <button class="style-option {{ 'current' if key == current_style }}" name="style" value="{{ key }}" title="{{ s.desc }}">
+            <img src="{{ static_url('featured/' ~ key ~ '.png') }}" alt="{{ s.name }}" loading="lazy">
+            <span class="style-name">{{ s.icon }} {{ s.name }}{% if key == current_style %} · 当前{% endif %}</span>
+            <span class="style-desc">{{ s.desc }}</span>
+          </button>
+        {% endfor %}
+      </div>
+    </form>
+  </section>
+{% endif %}
+
 <div class="detail-grid">
   <section class="card">
     <h2>描述</h2>

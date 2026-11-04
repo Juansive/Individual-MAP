@@ -1,4 +1,5 @@
 """条目：列表 / 时间轴、快速记录、新建、编辑、删除。"""
+import random
 import re
 from datetime import datetime
 from itertools import groupby
@@ -9,7 +10,8 @@ from sqlmodel import Session, func, select
 from app import vault
 from app.completeness import check_entry
 from app.db import get_session
-from app.models import ENTRY_KINDS, FEATURED_MAX, Attachment, Entry, Skill, default_featured_style
+from app.models import (ENTRY_KINDS, FEATURED_MAX, FEATURED_STYLES, Attachment, Entry, Skill,
+                        default_featured_style)
 from app.routes.links import LINK_CHOICES, delete_links_of, links_of
 from app.web import back_to, get_or_404, redirect, save_form_files, sort_entries, templates
 
@@ -199,6 +201,24 @@ async def toggle_featured(request: Request, entry_id: int, session: Session = De
         msg = f"「{entry.title}」设为代表作 🏅"
     session.commit()
     return redirect(here, msg)
+
+
+@router.post("/entries/{entry_id}/feature-style")
+async def set_featured_style(request: Request, entry_id: int, session: Session = Depends(get_session)):
+    """换代表作的星图特效。style 是 FEATURED_STYLES 的 key，或者 random（随机换一个不一样的）。"""
+    form = await request.form()
+    entry = get_or_404(session, Entry, entry_id)
+    here = back_to(form, f"/entries/{entry_id}")
+    style = form.get("style", "")
+    if style == "random":
+        current = entry.featured_style or default_featured_style(entry.kind)
+        style = random.choice([k for k in FEATURED_STYLES if k != current])
+    if style not in FEATURED_STYLES:
+        return redirect(here, "没有这个特效")
+    entry.featured_style = style
+    session.commit()
+    s = FEATURED_STYLES[style]
+    return redirect(here, f"星图特效换成了 {s.icon} {s.name}")
 
 
 @router.post("/entries/{entry_id}/delete")
