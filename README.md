@@ -47,6 +47,8 @@ data/vault/
 
 还有这些小帮手：
 
+- **🏅 代表作**：给最有含金量的几条经历打上标记（最多 5 条），可以“只看代表作”，导出时排在最前，星图里还有专属特效（见下文）
+
 - **完整度提示**：缺时间、缺证明文件、成果没量化……用橙色标签标出来，可以“只看待完善”
 - **技能管理**：统一技能名、设置类别、合并重复的技能
 - **导出与备份**：一键导出 Markdown（可以直接贴给 AI 写简历）；数据库 + 全部文件打包成 zip；启动时自动做数据库快照
@@ -131,6 +133,34 @@ data/vault/
 
 路线一旦选定就不再改变。**大类怎么升级**：每条经历按自己的等级计 1~5 点成长值，加起来对照这个大类的目标（教育 2 条、奖项 6 条……写满算满级），按进度 0 / 10 / 20 / 35 / 50 / 65 / 80 / 100% 分成 8 级，前面升得快、后面慢。
 
+### 🏅 代表作
+
+等级只看“写得全不全”，看不出“这件事有多牛”——这只有你自己知道。所以可以给最得意的经历打上 **代表作**（最多 5 条，限量才珍贵）。
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/featured-crown.png" alt="星冠"></td>
+<td width="50%"><img src="docs/images/featured-wings.png" alt="光之翼"></td>
+</tr>
+<tr>
+<td colspan="2">在星图里，代表作的<b>名字一直亮着</b>（金色），有一根<b>金线连到“我”</b>，神经信号也更常传到它们身上。每条代表作还有一种<b>专属特效</b>——上面是 👑 星冠和 🪽 光之翼。</td>
+</tr>
+</table>
+
+一共 8 种特效，设为代表作时按类型推荐一种，之后在详情页随时换（也可以点“🎲 随机换一个”）：
+
+| <img src="app/static/featured/crown.png" width="110"> | <img src="app/static/featured/spotlight.png" width="110"> | <img src="app/static/featured/wings.png" width="110"> | <img src="app/static/featured/comet.png" width="110"> |
+|:---:|:---:|:---:|:---:|
+| **👑 星冠**<br><sub>头顶一圈金色光点<br>默认：竞赛、奖项</sub> | **🔦 聚光灯**<br><sub>光从上方打下，脚下舞台光环<br>默认：项目、实习</sub> | **🪽 光之翼**<br><sub>两侧光翼缓慢扇动<br>默认：教育</sub> | **☄️ 彗尾**<br><sub>身后飘着一条发光尾迹<br>默认：其他</sub> |
+| <img src="app/static/featured/infinity.png" width="110"> | <img src="app/static/featured/fireworks.png" width="110"> | <img src="app/static/featured/stardust.png" width="110"> | <img src="app/static/featured/heartbeat.png" width="110"> |
+| **♾️ 无限轨迹**<br><sub>光点沿 ∞ 字不停描画<br>默认：科研</sub> | **🎆 礼花**<br><sub>每隔几秒升起一朵小烟花<br>默认：校园活动</sub> | **✨ 升腾星屑**<br><sub>金色星屑缓缓上升<br>默认：证书</sub> | **💓 心跳**<br><sub>两下一组的金色光圈<br>默认：志愿</sub> |
+
+<img src="docs/images/featured-picker.png" alt="选特效"><br>
+<sub>详情页里点一下就换特效</sub>
+
+<img src="docs/images/featured-cards.png" width="560" alt="代表作卡片"><br>
+<sub>素材库里代表作带金色徽章和金边，可以“只看代表作”</sub>
+
 ### 点亮进度与庆祝
 
 <img src="docs/images/graph-panel.png" width="200" align="right" alt="点亮进度">
@@ -212,7 +242,7 @@ start.bat          Windows 一键启动
 ## 路线图
 
 1. ✅ 素材库：录入、文件归档、时间轴/列表、搜索筛选、完整度提示、导出备份、关联经历、技能管理、自动快照
-2. ✅ 3D 星图：成长等级、进化分支、点亮进度、连线开关、沉浸模式
+2. ✅ 3D 星图：成长等级、进化分支、代表作专属特效、点亮进度、连线开关、沉浸模式
 3. ⏳ 桌面程序：打包成 Windows 程序，双击就能用
 4. ⏳ AI 辅助录入：导入旧简历、识别证书照片、整理杂乱文字、推荐技能标签、改写为 STAR 格式
 5. ⏳ 按岗位挑素材：粘贴 JD，自动挑出相关经历并生成定制的简历条目，同时在星图上点亮相关节点
