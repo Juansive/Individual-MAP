@@ -166,7 +166,7 @@ function orbMaterial(color) {
 
 function makeLabel(node) {
   const div = document.createElement("div");
-  div.className = `node-label ${node.type}`;
+  div.className = `node-label ${node.type}${node.featured ? " featured" : ""}`;
   div.textContent = node.label.length > 14 ? node.label.slice(0, 13) + "…" : node.label;
   div.style.setProperty("--c", node.color);
   const label = new CSS2DObject(div);
@@ -533,6 +533,336 @@ function blackholePathFx(fx) {
 
 const KIND_PATH_FX = { star: starPathFx, planet: planetPathFx, nebula: nebulaPathFx, blackhole: blackholePathFx };
 
+// ---------------------------------------------------------------- 代表作的专属特效
+// 用户自己标出的“最有含金量”的经历（最多 5 条），每条从 FEATURED_FX 里选一种（见 models.py 的 FEATURED_STYLES）。
+// 设计原则：要“独特”而不是“更亮”，不能抢了 Lv8 大类的风头。fx 同上：group、r、updaters
+const GOLD = new THREE.Color("#ffd27a");
+
+// 聚光灯光柱：球的上方最亮，上端渐隐（看不到灯的源头）；到球的高度附近淡下去，免得叠在球上把球冲白
+const SPOT_TEXTURE = canvasTexture(64, (ctx, s) => {
+  const g = ctx.createLinearGradient(0, s, 0, 0);
+  g.addColorStop(0, "rgba(255,255,255,.06)");
+  g.addColorStop(0.36, "rgba(255,255,255,.06)");
+  g.addColorStop(0.55, "rgba(255,255,255,.45)");
+  g.addColorStop(0.75, "rgba(255,255,255,.3)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+});
+
+// 👑 星冠：头顶悬着一圈金色光点，高低交错像王冠的齿，用金线连起来；缓慢旋转、轻轻浮动
+function crownFx(fx) {
+  const { r, group, updaters } = fx;
+  const teeth = 10;
+  const tips = new Float32Array(teeth * 3);
+  for (let i = 0; i < teeth; i++) {
+    const a = (i / teeth) * Math.PI * 2;
+    tips.set([Math.cos(a) * r * 0.95, i % 2 ? 0 : r * 0.42, Math.sin(a) * r * 0.95], i * 3);  // 齿尖高、齿间低
+  }
+  const tipGeometry = new THREE.BufferGeometry();
+  tipGeometry.setAttribute("position", new THREE.BufferAttribute(tips, 3));
+  const points = new THREE.Points(tipGeometry, new THREE.PointsMaterial(additive({
+    size: r * 0.45, map: GLOW_TEXTURE, color: GOLD,
+  })));
+  const zigzag = new THREE.LineLoop(tipGeometry, new THREE.LineBasicMaterial(additive({ color: GOLD })));
+  // 冠的底边：一圈圆
+  const base = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(Array.from({ length: 48 }, (_, i) => {
+      const a = (i / 48) * Math.PI * 2;
+      return new THREE.Vector3(Math.cos(a) * r * 0.95, -r * 0.12, Math.sin(a) * r * 0.95);
+    })),
+    new THREE.LineBasicMaterial(additive({ color: GOLD })),
+  );
+  const crown = new THREE.Group();
+  crown.add(points, zigzag, base);
+  [points, zigzag, base].forEach((o) => { o.raycast = noRaycast; });
+  group.add(crown);
+  updaters.push((dt, t, fade) => {
+    crown.rotation.y += dt * 0.45;
+    crown.position.y = r * (1.45 + 0.06 * Math.sin(t * 1.6));
+    points.material.opacity = 0.95 * fade;
+    zigzag.material.opacity = 0.6 * fade;
+    base.material.opacity = 0.45 * fade;
+  });
+}
+
+// 🔦 聚光灯：一束光从正上方打下来，脚下一圈舞台光斑，光柱里飘着浮尘
+function spotlightFx(fx) {
+  const { r, group, updaters } = fx;
+  const floor = -r * 1.7;    // 舞台地面的高度
+  const height = r * 7.5;
+  const geometry = new THREE.CylinderGeometry(r * 0.35, r * 1.5, height, 32, 1, true);
+  geometry.translate(0, floor + height / 2, 0);
+  const beam = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(additive({
+    map: SPOT_TEXTURE, color: new THREE.Color("#fff1c9"), side: THREE.DoubleSide,
+  })));
+  // 地面光圈：中间空、边上亮（用柔光晕贴图），不会在球背后叠加一团光把球冲淡
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(r * 2.6, 48), new THREE.MeshBasicMaterial(additive({
+    map: SOFT_HALO_TEXTURE, color: new THREE.Color("#ffe3a0"), side: THREE.DoubleSide,
+  })));
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.y = floor;
+  // 浮尘：在光柱里慢慢上升，到顶后回到底部
+  const count = 26;
+  const motes = new Float32Array(count * 3);
+  const seeds = Array.from({ length: count }, () => ({ a: Math.random() * Math.PI * 2, d: Math.random(), y: Math.random() }));
+  const moteGeometry = new THREE.BufferGeometry();
+  moteGeometry.setAttribute("position", new THREE.BufferAttribute(motes, 3));
+  const dust = new THREE.Points(moteGeometry, new THREE.PointsMaterial(additive({
+    size: r * 0.16, map: GLOW_TEXTURE, color: new THREE.Color("#fff6dc"),
+  })));
+  [beam, pool, dust].forEach((o) => { o.raycast = noRaycast; group.add(o); });
+  updaters.push((dt, t, fade) => {
+    seeds.forEach((m, i) => {
+      m.y = (m.y + dt * 0.05) % 1;
+      const y = m.y * height * 0.8;
+      const spread = r * (1.4 - (y / height) * 1.0) * m.d;   // 越往上光柱越窄
+      motes.set([Math.cos(m.a + t * 0.2) * spread, floor + y, Math.sin(m.a + t * 0.2) * spread], i * 3);
+    });
+    moteGeometry.attributes.position.needsUpdate = true;
+    beam.material.opacity = (0.1 + 0.02 * Math.sin(t * 1.3)) * fade;
+    pool.material.opacity = 0.5 * fade;
+    dust.material.opacity = 0.7 * fade;
+  });
+}
+
+// 光之翼贴图：根部在左边中间，几根羽毛向右上方扇形展开；right=false 时左右镜像
+function wingTexture(right) {
+  return canvasTexture(256, (ctx, s) => {
+    if (!right) {
+      ctx.translate(s, 0);
+      ctx.scale(-1, 1);
+    }
+    const [rx, ry] = [s * 0.04, s * 0.62];   // 翼根
+    // 整片翼面：上沿向上扬起的弧，下沿收回翼根，从根部到翼尖渐隐
+    const body = ctx.createRadialGradient(rx, ry, 0, rx, ry, s * 0.95);
+    body.addColorStop(0, "rgba(255,255,255,.55)");
+    body.addColorStop(0.5, "rgba(255,255,255,.22)");
+    body.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    ctx.quadraticCurveTo(s * 0.35, s * 0.05, s * 0.97, s * 0.1);   // 上沿
+    ctx.quadraticCurveTo(s * 0.7, s * 0.5, s * 0.55, s * 0.78);    // 翼尖往下的外沿
+    ctx.quadraticCurveTo(s * 0.3, s * 0.72, rx, ry);               // 下沿
+    ctx.fill();
+    // 羽毛：几片宽而互相重叠的长羽，从翼根向上方扇开
+    for (let i = 0; i < 5; i++) {
+      const angle = -0.75 + i * 0.2;
+      const len = s * (0.92 - i * 0.1);
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.rotate(angle);
+      const g = ctx.createLinearGradient(0, 0, len, 0);
+      g.addColorStop(0, "rgba(255,255,255,.5)");
+      g.addColorStop(0.7, "rgba(255,255,255,.2)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(len / 2, 0, len / 2, s * 0.07, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  });
+}
+const WING_TEXTURES = { left: wingTexture(false), right: wingTexture(true) };
+
+// 一串拖尾光点（彗尾、无限轨迹共用）：越靠后越暗。返回 { points, positions }，位置由调用方逐帧更新
+function trailPoints(count, size, tint) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const k = (1 - i / count) ** 1.6;
+    colors.set([tint.r * k, tint.g * k, tint.b * k], i * 3);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const points = new THREE.Points(geometry, new THREE.PointsMaterial(additive({
+    size, map: GLOW_TEXTURE, vertexColors: true,
+  })));
+  points.raycast = noRaycast;
+  return { points, positions };
+}
+
+// 🪽 光之翼：两侧各一片半透明光翼（正对镜头的贴图，从哪个角度看都在两边），以翼根为轴缓慢扇动
+function wingsFx(fx) {
+  const { r, group, updaters } = fx;
+  const wings = ["left", "right"].map((side) => {
+    const wing = new THREE.Sprite(new THREE.SpriteMaterial(additive({ map: WING_TEXTURES[side], color: GOLD })));
+    wing.center.set(side === "right" ? 0.04 : 0.96, 0.55);  // 锚点在翼根，旋转时绕翼根扇动
+    wing.position.x = (side === "right" ? 1 : -1) * r * 0.75;
+    wing.scale.set(r * 3.6, r * 3.6, 1);
+    wing.raycast = noRaycast;
+    group.add(wing);
+    return { wing, dir: side === "right" ? 1 : -1 };
+  });
+  updaters.push((dt, t, fade) => {
+    const flap = Math.sin(t * 1.8) * 0.22;
+    wings.forEach(({ wing, dir }) => {
+      wing.material.rotation = dir * flap;
+      wing.material.opacity = (0.5 + 0.12 * Math.sin(t * 1.8)) * fade;
+    });
+  });
+}
+
+// ☄️ 彗尾：一条发光尾迹，往斜上方、背向“我”飘起（像被星风吹着），尾巴轻轻摆动。
+// 只按“背向我”的话，尾巴常常正对镜头被压扁，所以再加一个向上的分量，从哪个角度看都看得清
+function cometFx(fx) {
+  const { r, group, updaters } = fx;
+  const count = 60;
+  const core = trailPoints(count, r * 0.7, new THREE.Color("#ffe6a8"));                  // 明亮的尾芯
+  const haze = trailPoints(count, r * 1.9, new THREE.Color("#ffcf7a").multiplyScalar(0.3)); // 外面一层宽而淡的光雾
+  group.add(core.points, haze.points);
+  const away = new THREE.Vector3();
+  const side = new THREE.Vector3();
+  updaters.push((dt, t, fade) => {
+    away.set(group.position.x, 0, group.position.z).normalize();   // 水平方向上背向“我”（原点）
+    if (away.lengthSq() === 0) away.set(1, 0, 0);
+    away.y = 1.3;
+    away.normalize();
+    side.set(-away.z, 0, away.x).normalize();        // 和尾巴垂直的方向，用来摆动
+    for (let i = 0; i < count; i++) {
+      const k = i / count;
+      const along = r * (0.7 + k * 6.5);
+      const sway = Math.sin(t * 1.4 - k * 4) * r * 0.7 * k;
+      core.positions.set([away.x * along + side.x * sway, away.y * along, away.z * along + side.z * sway], i * 3);
+      const wide = sway * 1.6;                     // 光雾摆得更开，尾巴越往后越散
+      haze.positions.set([away.x * along + side.x * wide, away.y * along, away.z * along + side.z * wide], i * 3);
+    }
+    [core, haze].forEach((tr) => {
+      tr.points.geometry.attributes.position.needsUpdate = true;
+      tr.points.material.opacity = 0.85 * fade;
+    });
+  });
+}
+
+// ♾️ 无限轨迹：一个光点沿 ∞ 字（双纽线）不停描画，身后留下渐隐的拖尾
+function infinityFx(fx) {
+  const { r, group, updaters } = fx;
+  const count = 70;
+  const { points, positions } = trailPoints(count, r * 0.45, GOLD);
+  const a = r * 2.6;
+  const lemniscate = (u) => {
+    const d = 1 + Math.sin(u) ** 2;
+    return new THREE.Vector3((a * Math.cos(u)) / d, (a * Math.sin(u) * Math.cos(u)) / d, 0);
+  };
+  const path = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(Array.from({ length: 96 }, (_, i) => lemniscate((i / 96) * Math.PI * 2))),
+    new THREE.LineBasicMaterial(additive({ color: GOLD })),
+  );
+  path.raycast = noRaycast;
+  const plane = new THREE.Object3D();
+  plane.rotation.set(-0.35, 0, 0.15);   // 轨迹平面稍微前倾，正面看得清 ∞ 的形状
+  plane.position.y = r * 0.2;
+  plane.add(path, points);
+  group.add(plane);
+  updaters.push((dt, t, fade) => {
+    for (let i = 0; i < count; i++) {
+      const p = lemniscate(t * 1.6 - i * 0.05);      // 第 i 个点是 i 步之前的位置
+      positions.set([p.x, p.y, p.z], i * 3);
+    }
+    points.geometry.attributes.position.needsUpdate = true;
+    points.material.opacity = 0.95 * fade;
+    path.material.opacity = 0.28 * fade;
+  });
+}
+
+// 🎆 礼花：每隔几秒，一颗光点从球顶升起，到高处炸开成一圈火花，火花慢慢下落、淡出
+function fireworksFx(fx) {
+  const { r, group, updaters } = fx;
+  const sparks = 44;
+  const positions = new Float32Array((sparks + 1) * 3);   // 第 0 个是升空的那颗
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const points = new THREE.Points(geometry, new THREE.PointsMaterial(additive({
+    size: r * 0.38, map: GLOW_TEXTURE, color: new THREE.Color("#ffd9a0"),
+  })));
+  points.raycast = noRaycast;
+  group.add(points);
+  const dirs = Array.from({ length: sparks }, () => new THREE.Vector3().randomDirection());
+  const period = 3.6;
+  const phase = Math.random() * period;   // 每条代表作的礼花错开放
+  const top = r * 4;
+  updaters.push((dt, t, fade) => {
+    const k = ((t + phase) % period) / period * 3.6;  // 0~0.7 升空，0.7~2.3 炸开下落，之后歇着
+    if (k < 0.7) {
+      positions.set([0, r + (top - r) * (k / 0.7), 0], 0);
+      for (let i = 1; i <= sparks; i++) positions.set([0, r + (top - r) * (k / 0.7), 0], i * 3);
+      points.material.opacity = 0.9 * fade;
+      points.material.size = r * 0.32;
+    } else if (k < 2.3) {
+      const e = (k - 0.7) / 1.6;                        // 炸开后的进度 0~1
+      const spread = r * 3.2 * (1 - (1 - e) ** 3);
+      positions.set([0, top, 0], 0);
+      dirs.forEach((d, i) => positions.set([d.x * spread, top + d.y * spread - e * e * r * 1.5, d.z * spread], (i + 1) * 3));
+      points.material.opacity = (1 - e * e) * fade;   // 炸开后亮一会儿再淡出
+      points.material.size = r * 0.5;
+    } else {
+      points.material.opacity = 0;
+    }
+    geometry.attributes.position.needsUpdate = true;
+  });
+}
+
+// ✨ 升腾星屑：球周围不断有金色星屑从下往上飘，边飘边闪，到上面淡出
+function stardustFx(fx) {
+  const { r, group, updaters } = fx;
+  const count = 48;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const points = new THREE.Points(geometry, new THREE.PointsMaterial(additive({
+    size: r * 0.42, map: GLOW_TEXTURE, vertexColors: true,
+  })));
+  points.raycast = noRaycast;
+  group.add(points);
+  const motes = Array.from({ length: count }, () => ({
+    a: Math.random() * Math.PI * 2, d: r * (0.7 + Math.random() * 0.9), y: Math.random(), speed: 0.12 + Math.random() * 0.1,
+  }));
+  updaters.push((dt, t, fade) => {
+    motes.forEach((m, i) => {
+      m.y = (m.y + dt * m.speed) % 1;
+      const glow = 1.4 * Math.sin(m.y * Math.PI) * (0.65 + 0.35 * Math.sin(t * 5 + i));  // 中段最亮，还会闪
+      positions.set([Math.cos(m.a + m.y) * m.d, -r * 0.8 + m.y * r * 4.2, Math.sin(m.a + m.y) * m.d], i * 3);
+      colors.set([GOLD.r * glow, GOLD.g * glow, GOLD.b * glow], i * 3);
+    });
+    geometry.attributes.position.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
+    points.material.opacity = fade;
+  });
+}
+
+// 💓 心跳：两下一组（“扑通、扑通”）的金色光圈从球边向外扩散
+function heartbeatFx(fx) {
+  const { r, group, updaters } = fx;
+  const rings = [0, 0.28].map((delay) => {
+    const ring = new THREE.Sprite(new THREE.SpriteMaterial(additive({ map: SHOCK_TEXTURE, color: GOLD })));
+    ring.raycast = noRaycast;
+    group.add(ring);
+    return { ring, delay };
+  });
+  const period = 1.8;
+  updaters.push((dt, t, fade) => {
+    rings.forEach(({ ring, delay }) => {
+      const k = (((t - delay) % period) + period) % period / 1.1;   // 每下持续 1.1 秒
+      if (k >= 1) {
+        ring.material.opacity = 0;
+        return;
+      }
+      ring.scale.setScalar(r * (2.6 + k * 3.4));    // 贴图里的环半径约为大小的 0.4 倍：从球边开始往外扩
+      ring.material.opacity = 0.7 * (1 - k) ** 1.5 * fade;
+    });
+  });
+}
+
+const FEATURED_FX = {
+  crown: crownFx, spotlight: spotlightFx, wings: wingsFx, comet: cometFx,
+  infinity: infinityFx, fireworks: fireworksFx, stardust: stardustFx, heartbeat: heartbeatFx,
+};
+
 function makeNodeObject(node) {
   const r = node.type === "me" ? 4.5 : node.size * 0.5;
   const color = node.type === "me" ? new THREE.Color("#e8ecff") : tone(node.color);
@@ -575,9 +905,9 @@ function makeNodeObject(node) {
 
   // 中心、类型、技能、机构节点常驻文字标签；条目靠悬停信息卡
   let label = null;
-  if (node.type !== "entry") {
+  if (node.type !== "entry" || node.featured) {  // 代表作的名字也常驻，放高一点，给星冠留位置
     label = makeLabel(node);
-    label.position.y = r + 1.5;
+    label.position.y = node.featured ? r * 2.3 + 1.5 : r + 1.5;
     group.add(label);
   }
 
@@ -677,6 +1007,11 @@ function makeNodeObject(node) {
     group.add(sparkle);
   }
 
+  const updaters = [];  // 代表作、大类路线特效的逐帧动画：(dt, 秒, fade) => void
+
+  // 代表作：专属特效
+  if (node.featured) (FEATURED_FX[node.featuredStyle] ?? crownFx)({ group, r, color, white, updaters });
+
   // 核心技能：外面套一层缓慢旋转的线框二十面体，像晶体
   let crystal = null;
   if (node.star) {
@@ -693,7 +1028,6 @@ function makeNodeObject(node) {
 
   // 大类逐级叠加：Lv1 星雾、Lv2 变大变亮（内核，见上）所有大类一样；Lv3 起交给进化路线
   if (kindLv >= 1) addAura(GLOW_TEXTURE, color, 7, 0.12);                          // Lv1 星雾
-  const updaters = [];  // 各路线特效的逐帧动画
   let coronas = [];
   let galaxy = null;
   let dark = false;
@@ -747,6 +1081,7 @@ function tooltip(node) {
     return `<div class="tip" style="--c:${node.color}">
       <div class="tip-head"><span class="tip-kind">${esc(node.kindLabel)}</span><span class="tip-period">${esc(node.period)}</span></div>
       <div class="tip-title">${esc(node.label)}</div>
+      ${node.featured ? `<div class="tip-featured">🏅 代表作 · ${esc(node.featuredName)}</div>` : ""}
       ${meta ? `<div class="tip-meta">${esc(meta)}</div>` : ""}
       ${node.skills.length ? `<div class="tip-chips">${node.skills.map((s) => `<span class="tip-chip">${esc(s)}</span>`).join("")}</div>` : ""}
       ${rels.length ? `<div class="tip-rels">${rels.map((r) => `<div><b>${esc(r.label)}</b> ${esc(r.node.label)}</div>`).join("")}</div>` : ""}
@@ -801,7 +1136,7 @@ function refreshLinks() {
 }
 
 // 连线颜色：类型分支和技能连线用终点节点的颜色，机构和条目关联用固定颜色
-const LINK_RGB = { org: "154,167,199", relation: "255,207,122" };
+const LINK_RGB = { org: "154,167,199", relation: "255,207,122", featured: "255,210,122" };
 const linkRgb = (l) => LINK_RGB[l.type] ?? hexToRgb(l.target.color);
 
 function hexToRgb(hex) {
@@ -812,7 +1147,7 @@ function hexToRgb(hex) {
 function linkColor(link) {
   const rgb = linkRgb(link);
   if (highlightLinks.has(link)) return `rgba(${rgb},0.85)`;
-  return `rgba(${rgb},${highlightNodes.size ? 0.03 : link.type === "relation" ? 0.45 : 0.3})`;
+  return `rgba(${rgb},${highlightNodes.size ? 0.03 : { relation: 0.45, featured: 0.55 }[link.type] ?? 0.3})`;
 }
 
 // ---------------------------------------------------------------- 神经放电
@@ -827,9 +1162,13 @@ function linkBetween(a, b) {
 function fire() {
   const entries = graphData.nodes.filter((n) => n.type === "entry" && n.__revealed && isVisible(n));
   if (state.lowFx || !entries.length || document.hidden) return;
-  const entry = entries[Math.floor(Math.random() * entries.length)];
+  const featured = entries.filter((n) => n.featured);
+  const toFeatured = featured.length > 0 && Math.random() < 0.4;  // 代表作更常收到信号
+  const pool = toFeatured ? featured : entries;
+  const entry = pool[Math.floor(Math.random() * pool.length)];
   const kindNode = nodeById.get(`kind:${entry.kind}`);
-  const path = [linkBetween(nodeById.get("me"), kindNode), linkBetween(kindNode, entry)];
+  const me = nodeById.get("me");
+  const path = toFeatured ? [linkBetween(me, entry)] : [linkBetween(me, kindNode), linkBetween(kindNode, entry)];
   const outward = entry.links.filter((l) => l.source === entry && linkShown(l));  // 只沿看得见的连线走
   if (outward.length) path.push(outward[Math.floor(Math.random() * outward.length)]);
 
@@ -1113,7 +1452,7 @@ function isVisible(node) {
 const LINK_MODES = ["simple", "all", "noRelation"];
 
 function linkModeAllows(l) {
-  if (l.type === "tree" || highlightLinks.has(l) || state.linkMode === "all") return true;
+  if (l.type === "tree" || l.type === "featured" || highlightLinks.has(l) || state.linkMode === "all") return true;
   return state.linkMode === "noRelation" && l.type !== "relation";
 }
 
@@ -1658,7 +1997,7 @@ const Graph = ForceGraph3D({ controlType: "orbit", extraRenderers: [new CSS2DRen
   .linkColor(linkColor)
   .linkWidth((l) => (highlightLinks.has(l) ? 0.5 : 0))
   // 连线带一点弧度、朝向随机，更像神经纤维
-  .linkCurvature((l) => ({ tree: 0.12, relation: 0.45 }[l.type] ?? 0.28))
+  .linkCurvature((l) => ({ tree: 0.12, relation: 0.45, featured: 0.2 }[l.type] ?? 0.28))
   .linkCurveRotation((l) => l.rotation)
   // 平时没有流动光点（由“放电”偶尔点亮），悬停时相关连线上才有持续的信号
   .linkDirectionalParticles((l) => (!state.lowFx && highlightLinks.has(l) ? 3 : 0))
@@ -1703,6 +2042,9 @@ Graph.scene().add(stars.sky, stars.dust);
 // 力学参数：我固定在中心，类型分支离得远一些
 Graph.d3Force("charge").strength(-50);
 Graph.d3Force("link").distance((l) => (l.source.type === "me" ? 38 : l.type === "tree" ? 24 : 20));
+// 代表作连到“我”的金线只用于显示：力度设为 0，不改变网络原来的形状
+const defaultLinkStrength = Graph.d3Force("link").strength();
+Graph.d3Force("link").strength((l) => (l.type === "featured" ? 0 : defaultLinkStrength(l)));
 
 const controls = Graph.controls();
 controls.autoRotate = true;

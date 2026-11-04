@@ -34,6 +34,8 @@ def client():
         config.DB_PATH.unlink()
     config.ensure_dirs()
     SQLModel.metadata.create_all(engine)
+    from app import migrations
+    migrations.mark_up_to_date()  # 和真实的第一次运行一样：新建的库直接是最新版本
 
     with TestClient(app) as c:  # 会触发 lifespan：自动备份 + 建表 + 升级
         yield c

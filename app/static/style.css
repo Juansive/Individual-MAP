@@ -205,6 +205,36 @@ a.chip:hover { border-color: var(--accent); text-decoration: none; }
 .entry-foot:empty { display: none; }
 .file-count { font-size: 12px; color: var(--muted); margin-right: 6px; }
 
+/* 代表作：金色徽章、卡片金边 */
+.featured-badge {
+  display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 12px; font-weight: 600;
+  color: #9a6700; background: #fff4d6; border: 1px solid #f2d48a;
+}
+.entry-card.featured { border-color: #f2d48a; box-shadow: var(--shadow), 0 0 0 1px #f8e3a8 inset; }
+.btn.featured-on { color: #9a6700; background: #fff4d6; border-color: #f2d48a; font-weight: 600; }
+
+/* 详情页：代表作的星图特效选择 */
+.style-picker { margin-bottom: 16px; }
+.style-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.style-head h2 { margin: 0; }
+.style-head .btn { margin-left: auto; }
+.style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.style-option {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 6px 8px;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color .12s, transform .12s;
+}
+.style-option:hover { border-color: #f2d48a; transform: translateY(-1px); }
+.style-option img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px; background: #05060b; }
+.style-option .style-name { font-size: 13px; font-weight: 600; }
+.style-option .style-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.style-option.current { border: 2px solid #e5b84a; box-shadow: 0 0 0 3px #fff4d6; }
+@media (prefers-color-scheme: dark) {
+  .featured-badge, .btn.featured-on { color: #ffd98a; background: #3a2f12; border-color: #7a6223; }
+  .entry-card.featured { border-color: #7a6223; box-shadow: var(--shadow), 0 0 0 1px #5a4818 inset; }
+  .style-option.current { box-shadow: 0 0 0 3px #3a2f12; }
+}
+
 /* 列表 */
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .entry-table { width: 100%; border-collapse: collapse; }

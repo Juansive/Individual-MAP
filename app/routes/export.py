@@ -18,13 +18,18 @@ router = APIRouter()
 
 def entries_markdown(entries: list[Entry]) -> str:
     lines = ["# 个人素材库", "", f"导出时间：{datetime.now():%Y-%m-%d %H:%M}", ""]
+    featured = sort_entries([e for e in entries if e.featured])
+    if featured:  # 代表作放在最前面提一句，写简历时优先用
+        lines += ["代表作：" + "、".join(e.title for e in featured), ""]
     for key, kind in ENTRY_KINDS.items():
+        # 每个类型里代表作排在前面，其余按时间倒序
         group = sort_entries([e for e in entries if e.kind == key])
+        group.sort(key=lambda e: not e.featured)
         if not group:
             continue
         lines += [f"## {kind.label}", ""]
         for e in group:
-            lines.append(f"### {e.title}")
+            lines.append(f"### {'🏅 ' if e.featured else ''}{e.title}")
             meta = " | ".join(x for x in (e.period_text(), e.org, e.role, e.level) if x)
             lines.append(f"- {meta}")
             if e.skills:

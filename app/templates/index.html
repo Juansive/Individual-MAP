@@ -40,6 +40,7 @@
       {% for s in skills %}<option {{ 'selected' if s.name == skill }}>{{ s.name }}</option>{% endfor %}
     </select>
     <label class="check"><input type="checkbox" name="todo" value="1" {{ 'checked' if todo }}> 只看待完善</label>
+    <label class="check"><input type="checkbox" name="featured" value="1" {{ 'checked' if featured }}> 只看代表作</label>
     <input type="hidden" name="view" value="{{ view }}">
     <button class="btn">筛选</button>
     {% if filtering %}<a class="btn ghost" href="/?view={{ view }}">清除</a>{% endif %}
@@ -53,6 +54,7 @@
 <p class="summary">
   共 {{ total }} 条{% if filtering %}，筛选出 {{ entries | length }} 条{% endif %}
   {% if todo_count and not todo %} · <a href="/?todo=1&view={{ view }}">{{ todo_count }} 条待完善</a>{% endif %}
+  {% if featured_count and not featured %} · <a href="/?featured=1&view={{ view }}">🏅 {{ featured_count }} 条代表作</a>{% endif %}
 </p>
 
 {% if not entries %}
@@ -70,7 +72,7 @@
       {% for e in entries %}
         <tr onclick="location.href='/entries/{{ e.id }}'">
           <td>{{ kind_chip(e.kind) }}</td>
-          <td><a href="/entries/{{ e.id }}">{{ e.title }}</a></td>
+          <td>{% if e.featured %}<span title="代表作">🏅</span> {% endif %}<a href="/entries/{{ e.id }}">{{ e.title }}</a></td>
           <td class="muted">{{ [e.org, e.role] | select | join(' · ') }}</td>
           <td class="nowrap muted">{{ e.period_text() }}</td>
           <td>{% for s in e.skills %}<span class="chip">{{ s.name }}</span>{% endfor %}</td>
